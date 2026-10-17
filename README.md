@@ -1,6 +1,6 @@
-# Archie Home Assistant
+# Archie Web
 
-[![CI](https://github.com/NikGor/homeassistant/actions/workflows/ci.yml/badge.svg)](https://github.com/NikGor/homeassistant/actions/workflows/ci.yml)
+[![CI](https://github.com/NikGor/archie-web/actions/workflows/ci.yml/badge.svg)](https://github.com/NikGor/archie-web/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 
@@ -11,8 +11,8 @@ Django-based smart home dashboard — part of the Archie ecosystem. Light contro
 ### 1. Clone
 
 ```bash
-git clone git@github.com:NikGor/homeassistant.git archie-homeassistant
-cd archie-homeassistant
+git clone git@github.com:NikGor/archie-web.git archie-web
+cd archie-web
 ```
 
 ### 2. Create `.env`
@@ -83,10 +83,10 @@ Application: http://localhost:8000
 
 ## AI Agent Connection
 
-Home Assistant proxies requests to external [archie-ai-agent](https://github.com/NikGor/archie-ai-agent).
+Archie Web proxies requests to external [archie-ai-agent](https://github.com/NikGor/archie-ai-agent).
 
 ```
-[Home Assistant :8000] ──proxy──▶ [AI Agent :8005]
+[Archie Web :8000] ──proxy──▶ [AI Agent :8005]
      /ai-assistant/*                POST /chat
 ```
 
@@ -104,7 +104,7 @@ Both containers must be in `shared_network`.
 
 ```
 ┌─────────────────┐     ┌─────────────────────┐
-│ archie-frontend │────▶│ archie-homeassistant│
+│ archie-frontend │────▶│ archie-web          │
 │  (Next.js)      │     │   (Django :8000)    │
 └─────────────────┘     └──────────┬──────────┘
                                    │
