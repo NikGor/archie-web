@@ -69,7 +69,7 @@ jobs:
             
             ## Installation
             ```toml
-            archie-shared = {git = "https://github.com/NikGor/homeassistant.git", subdirectory = "archie-shared", tag = "${{ steps.get_version.outputs.version }}"}
+            archie-shared = {git = "https://github.com/NikGor/archie-web.git", subdirectory = "archie-shared", tag = "${{ steps.get_version.outputs.version }}"}
             ```
           draft: false
           prerelease: false
