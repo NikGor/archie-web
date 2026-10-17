@@ -14,7 +14,7 @@
 
 ## 0. Существующий код (`archie-voice/`)
 
-В репо уже есть папка `archie-voice/` (трекается в этом же git-репо homeassistant):
+В репо уже есть папка `archie-voice/` (трекается в этом же git-репо archie-web):
 
 - `main.py` — детектор wake word на **Picovoice Porcupine** + `hey-archie_..._v3_0_0.ppn`.
   **Picovoice-аккаунт забанен → выкидываем Porcupine и `.ppn`, заменяем на OpenWakeWord.**
@@ -156,7 +156,7 @@ OpenRouter TTS принимает **обычный текст (+ inline audio ta
 
 | Решение | Варианты | Заметки |
 |---|---|---|
-| **Где код** | ~~отдельный репо~~ / **подпапка `archie-voice/`** (уже есть, трекается в homeassistant) | Де-факто решено: код уже живёт подпапкой. Держать его Python-env отдельно (свой venv/requirements) и **исключить из Docker-сборки вебаппа** (`.dockerignore`) |
+| **Где код** | ~~отдельный репо~~ / **подпапка `archie-voice/`** (уже есть, трекается в archie-web) | Де-факто решено: код уже живёт подпапкой. Держать его Python-env отдельно (свой venv/requirements) и **исключить из Docker-сборки вебаппа** (`.dockerignore`) |
 | **Рантайм на Pi** | systemd-сервис на хосте / Docker-контейнер | Рекомендация — systemd (проще доступ к аудио; Docker требует проброс `/dev/snd` + PipeWire-сокет) |
 | **Микрофон** | mic BT-колонки Leitz / отдельный USB-микрофон | У Leitz mic только в профиле `headset-head-unit` и узкополосный → плохо для STT/wake. Вероятно нужен **USB-микрофон** |
 | **Пользователь** | один `user_name` / различать говорящих | По умолчанию — один фиксированный user_name |
