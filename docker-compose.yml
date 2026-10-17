@@ -1,4 +1,5 @@
-version: '3.9'
+# Preserve existing containers and Redis volume when the repository directory changes.
+name: homeassistant
 
 services:
   web:
