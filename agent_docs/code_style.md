@@ -30,7 +30,7 @@
 ```python
 import os                                           # 1. stdlib
 from django.db import models                        # 2. third-party
-from homeassistant.light.models import LightDevice  # 3. local
+from archie_web.light.models import LightDevice  # 3. local
 ```
 
 ## Naming
