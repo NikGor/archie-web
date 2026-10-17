@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "archie-web"
-packages = [{include = "homeassistant"}]
+packages = [{include = "archie_web"}]
 version = "0.1.0"
 description = ""
 authors = ["NikGor <nicolas.gordienko@example.com>"]

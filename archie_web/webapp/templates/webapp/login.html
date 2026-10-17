@@ -1,0 +1,140 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archie — Вход</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <link rel="icon" type="image/svg+xml" href="{% static 'webapp/images/favicon.svg' %}">
+
+    <style>
+        body, html {
+            font-family: 'Inter', sans-serif;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 25px 4px rgba(0, 191, 255, 0.4);
+                transform: translate(-50%, -50%) scale(0.98);
+            }
+            50% {
+                box-shadow: 0 0 50px 15px rgba(0, 191, 255, 0.7);
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        .orb {
+            width: min(60vw, 60vh, 500px);
+            height: min(60vw, 60vh, 500px);
+            background: #050505;
+            border-radius: 50%;
+            animation: pulse 4s infinite ease-in-out;
+            box-shadow: 0 0 25px 4px rgba(0, 191, 255, 0.4);
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            z-index: 1;
+        }
+
+        .login-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        .login-input {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: white;
+            transition: border-color 0.2s;
+        }
+
+        .login-input:focus {
+            outline: none;
+            border-color: rgba(0, 191, 255, 0.6);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .login-input::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .login-btn {
+            background: rgba(0, 191, 255, 0.2);
+            border: 1px solid rgba(0, 191, 255, 0.4);
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .login-btn:hover {
+            background: rgba(0, 191, 255, 0.35);
+            border-color: rgba(0, 191, 255, 0.7);
+        }
+    </style>
+</head>
+<body class="bg-black text-gray-300 h-screen flex items-center justify-center">
+
+    <div class="orb"></div>
+
+    <div class="login-card rounded-2xl p-8 w-full max-w-sm mx-4 relative z-10">
+
+        <div class="text-center mb-8">
+            <div class="text-3xl font-bold text-white tracking-wide mb-1">Archie</div>
+            <div class="text-sm text-gray-500">Archie Web</div>
+        </div>
+
+        {% if error %}
+        <div class="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm text-center">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+
+            <div>
+                <input
+                    type="text"
+                    name="username"
+                    placeholder="Логин"
+                    autocomplete="username"
+                    required
+                    class="login-input w-full px-4 py-3 rounded-xl text-sm"
+                >
+            </div>
+
+            <div>
+                <input
+                    type="password"
+                    name="password"
+                    placeholder="Пароль"
+                    autocomplete="current-password"
+                    required
+                    class="login-input w-full px-4 py-3 rounded-xl text-sm"
+                >
+            </div>
+
+            <button
+                type="submit"
+                class="login-btn w-full py-3 rounded-xl text-white font-medium text-sm mt-2"
+            >
+                Войти
+            </button>
+        </form>
+
+    </div>
+
+</body>
+</html>
