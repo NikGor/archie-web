@@ -56,16 +56,16 @@ Add to your `pyproject.toml`:
 ```toml
 [tool.poetry.dependencies]
 # Latest version from main branch
-archie-shared = {git = "https://github.com/NikGor/homeassistant.git", subdirectory = "archie-shared"}
+archie-shared = {git = "https://github.com/NikGor/archie-web.git", subdirectory = "archie-shared"}
 
 # Specific version (recommended for production)
-archie-shared = {git = "https://github.com/NikGor/homeassistant.git", subdirectory = "archie-shared", tag = "v0.1.0"}
+archie-shared = {git = "https://github.com/NikGor/archie-web.git", subdirectory = "archie-shared", tag = "v0.1.0"}
 
 # Specific branch
-archie-shared = {git = "https://github.com/NikGor/homeassistant.git", subdirectory = "archie-shared", branch = "main"}
+archie-shared = {git = "https://github.com/NikGor/archie-web.git", subdirectory = "archie-shared", branch = "main"}
 
 # Specific commit
-archie-shared = {git = "https://github.com/NikGor/homeassistant.git", subdirectory = "archie-shared", rev = "abc123def"}
+archie-shared = {git = "https://github.com/NikGor/archie-web.git", subdirectory = "archie-shared", rev = "abc123def"}
 ```
 
 Then run:
@@ -78,16 +78,16 @@ Alternatively, you can add it via command line:
 
 ```bash
 # Latest version
-poetry add git+https://github.com/NikGor/homeassistant.git#subdirectory=archie-shared
+poetry add git+https://github.com/NikGor/archie-web.git#subdirectory=archie-shared
 
 # Specific tag/version
-poetry add "git+https://github.com/NikGor/homeassistant.git@v0.1.0#subdirectory=archie-shared"
+poetry add "git+https://github.com/NikGor/archie-web.git@v0.1.0#subdirectory=archie-shared"
 
 # Specific branch
-poetry add "git+https://github.com/NikGor/homeassistant.git@main#subdirectory=archie-shared"
+poetry add "git+https://github.com/NikGor/archie-web.git@main#subdirectory=archie-shared"
 
 # Specific commit
-poetry add "git+https://github.com/NikGor/homeassistant.git@abc123def#subdirectory=archie-shared"
+poetry add "git+https://github.com/NikGor/archie-web.git@abc123def#subdirectory=archie-shared"
 ```
 
 ### For local development in this repository:
