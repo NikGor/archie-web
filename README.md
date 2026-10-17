@@ -26,7 +26,7 @@ DEBUG=True
 DATABASE_URL=sqlite:///db.sqlite3
 
 # Or PostgreSQL for Docker/production:
-# DATABASE_URL=postgresql://homeassistant_user:homeassistant_password@localhost:5432/homeassistant_db
+# DATABASE_URL=postgresql://archie_web_user:change-me@host.docker.internal:5432/archie_web_db
 
 # Redis
 REDIS_HOST=localhost
@@ -70,9 +70,13 @@ make install && make migrate && make run
 docker network create shared_network
 
 # Create PostgreSQL database
-sudo -u postgres psql -c "CREATE DATABASE homeassistant_db;"
-sudo -u postgres psql -c "CREATE USER homeassistant_user WITH PASSWORD 'homeassistant_password';"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE homeassistant_db TO homeassistant_user;"
+sudo -u postgres psql -c "CREATE DATABASE archie_web_db;"
+sudo -u postgres psql -c "CREATE USER archie_web_user WITH PASSWORD 'change-me';"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE archie_web_db TO archie_web_user;"
+
+# Set DATABASE_URL in .env to the host PostgreSQL connection above.
+# Existing installations: retain COMPOSE_PROJECT_NAME and REDIS_DATA_VOLUME
+# until the existing containers and Redis data have been migrated.
 
 # Build and run
 docker compose build
