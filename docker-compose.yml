@@ -1,5 +1,5 @@
-# Preserve existing containers and Redis volume when the repository directory changes.
-name: homeassistant
+# Existing deployments can override the project and volume names in .env.
+name: ${COMPOSE_PROJECT_NAME:-archie-web}
 
 services:
   web:
@@ -9,13 +9,14 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://homeassistant_user:homeassistant_password@host.docker.internal:5432/homeassistant_db
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - shared_network
+      shared_network:
+        aliases:
+          - archie-web
     depends_on:
       - redis
 
@@ -30,6 +31,7 @@ services:
 
 volumes:
   redis_data:
+    name: ${REDIS_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-archie-web}_redis_data}
 
 networks:
   shared_network:
