@@ -4,7 +4,7 @@
 
 Modular Django 5.2 smart home dashboard. `webapp` is the central hub; specialized apps handle specific functionality.
 
-**Dual model pattern** — Pydantic models (API/validation) + Django models (persistence), bridged via `to_*()`. See `homeassistant/ai_assistant/models.py`.
+**Dual model pattern** — Pydantic models (API/validation) + Django models (persistence), bridged via `to_*()`. See `archie_web/ai_assistant/models.py`.
 **API proxy pattern** — AI assistant proxies to external AI Agent via `requests.post(f'{AI_AGENT_URL}/chat', json=data)`.
 **Device controller pattern** — `light/light_controller.py` manages connection pooling, thread-safety, auto-discovery.
 
