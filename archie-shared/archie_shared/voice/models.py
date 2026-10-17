@@ -1,6 +1,6 @@
 """Single source of truth for persona -> Gemini TTS voice mapping.
 
-Consumed by both archie-voice (the Pi wake-word assistant) and the homeassistant
+Consumed by both archie-voice (the Pi wake-word assistant) and the archie-web
 webapp (the browser Voice Chat), so a persona always speaks in the same voice
 everywhere. Voices are Gemini TTS voice ids (male/female, style-matched).
 """
