@@ -1,4 +1,4 @@
-# Archie Home Assistant
+# Archie Web
 
 ## Architecture
 
@@ -73,5 +73,4 @@ See `agent_docs/` for code style and logging conventions.
 | `archie-shared` | Use when adding or editing shared Pydantic models: chat protocol types, UI components (cards, widgets, response levels), UserState |
 | `ai-agent` | Use when building or editing UI that consumes AI agent responses — rendering response levels, WebSocket streaming, button discriminator (AssistantButton vs FrontendButton) |
 | `db-explorer` | Use to query and inspect records in the PostgreSQL database — check tables, debug data, explore model records |
-| `log-analyzer` | Use to investigate errors, exceptions, and unexpected behavior — always check Docker logs before drawing conclusions | 
-
+| `log-analyzer` | Use to investigate errors, exceptions, and unexpected behavior — always check Docker logs before drawing conclusions |
