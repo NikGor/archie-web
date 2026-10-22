@@ -2,9 +2,11 @@
 
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 SWARM_TEXT_MAX_LENGTH = 280
+SWARM_MEMORY_FACT_MAX_LENGTH = 200
+_CLOCK_PATTERN = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
 
 SwarmMessageKind = Literal[
     "user",
@@ -17,6 +19,11 @@ SwarmMessageKind = Literal[
     "decision",  # the single council answer to the user; may delegate via @mentions
 ]
 SwarmAgentRole = Literal["state", "action"]
+# running: periodic checks and chat; paused: chat only; stopped: swarm off, chat cleared
+SwarmMode = Literal["running", "paused", "stopped"]
+SwarmWatchTask = Literal["home", "mail", "calendar", "football"]
+# low: chat only; normal: LED display; high: LED display and voice
+SwarmImportance = Literal["low", "normal", "high"]
 
 
 class SwarmUsage(BaseModel):
@@ -82,6 +89,9 @@ class SwarmMessage(BaseModel):
     proposal: Optional[SwarmProposal] = Field(
         default=None, description="Action waiting for user approval"
     )
+    importance: Optional[SwarmImportance] = Field(
+        default=None, description="Importance of a spontaneous alert"
+    )
     usage: Optional[SwarmUsage] = Field(
         default=None, description="LLM usage for this message"
     )
@@ -102,6 +112,71 @@ class SwarmAgentInfo(BaseModel):
     groups: List[str] = Field(
         default_factory=list,
         description="Groups the agent belongs to; '@group' mentions wake all members",
+    )
+
+
+class SwarmSettings(BaseModel):
+    """User settings of the spontaneous swarm checks; times are HH:MM in the user's time zone"""
+
+    interval_min_minutes: int = Field(
+        default=3, ge=1, le=60, description="Shortest random pause between checks"
+    )
+    interval_max_minutes: int = Field(
+        default=16, ge=1, le=60, description="Longest random pause between checks"
+    )
+    active_from: str = Field(
+        default="08:00", pattern=_CLOCK_PATTERN, description="Checks start"
+    )
+    active_until: str = Field(
+        default="00:00",
+        pattern=_CLOCK_PATTERN,
+        description="Checks end; 00:00 means midnight",
+    )
+    voice_from_weekday: str = Field(
+        default="09:00",
+        pattern=_CLOCK_PATTERN,
+        description="Voice alerts start on Monday to Friday",
+    )
+    voice_from_weekend: str = Field(
+        default="11:00",
+        pattern=_CLOCK_PATTERN,
+        description="Voice alerts start on Saturday and Sunday",
+    )
+    voice_until: str = Field(
+        default="23:30", pattern=_CLOCK_PATTERN, description="Voice alerts end"
+    )
+    tasks: List[SwarmWatchTask] = Field(
+        default_factory=lambda: ["home", "mail", "calendar", "football"],
+        description="Enabled checks; one check runs per wake-up",
+    )
+    football_teams: List[str] = Field(
+        default_factory=list, description="Teams whose live matches the swarm follows"
+    )
+
+    @model_validator(mode="after")
+    def _check_interval(self) -> "SwarmSettings":
+        if self.interval_min_minutes > self.interval_max_minutes:
+            raise ValueError("interval_min_minutes must not exceed interval_max_minutes")
+        return self
+
+
+class SwarmMemoryFact(BaseModel):
+    """A lasting fact or preference the swarm keeps in every prompt"""
+
+    fact_id: str = Field(description="Unique fact ID")
+    text: str = Field(
+        max_length=SWARM_MEMORY_FACT_MAX_LENGTH, description="The fact, one sentence"
+    )
+    created_at: str = Field(description="ISO 8601 UTC timestamp")
+
+
+class SwarmRunInfo(BaseModel):
+    """Outcome of one spontaneous check"""
+
+    task: SwarmWatchTask = Field(description="The check that ran")
+    finished_at: str = Field(description="ISO 8601 UTC timestamp")
+    outcome: Literal["silent", "reported", "failed"] = Field(
+        description="silent: nothing new; reported: an alert was posted"
     )
 
 
@@ -138,8 +213,29 @@ class SwarmAgentsEvent(BaseModel):
     agents: List[SwarmAgentInfo] = Field(description="Agent roster")
 
 
+class SwarmControlEvent(BaseModel):
+    """Mode, settings, schedule and long-term memory of the swarm"""
+
+    type: Literal["control"] = Field("control", description="Event type")
+    mode: SwarmMode = Field(description="Current swarm mode")
+    settings: SwarmSettings = Field(description="Current settings")
+    next_run_at: Optional[str] = Field(
+        default=None, description="ISO 8601 UTC time of the next check, if planned"
+    )
+    last_run: Optional[SwarmRunInfo] = Field(
+        default=None, description="Outcome of the last check"
+    )
+    memory: List[SwarmMemoryFact] = Field(
+        default_factory=list, description="Long-term memory facts"
+    )
+
+
 SwarmServerEvent = Union[
-    SwarmHistoryEvent, SwarmMessageEvent, SwarmTypingEvent, SwarmAgentsEvent
+    SwarmHistoryEvent,
+    SwarmMessageEvent,
+    SwarmTypingEvent,
+    SwarmAgentsEvent,
+    SwarmControlEvent,
 ]
 
 
@@ -170,6 +266,34 @@ class SwarmProposalDecisionCommand(BaseModel):
     proposal_id: str = Field(description="Proposal ID")
 
 
+class SwarmModeCommand(BaseModel):
+    """User presses Play, Pause or Stop"""
+
+    type: Literal["set_mode"] = Field("set_mode", description="Command type")
+    mode: SwarmMode = Field(description="New swarm mode")
+
+
+class SwarmSettingsCommand(BaseModel):
+    """User saves the swarm settings"""
+
+    type: Literal["update_settings"] = Field(
+        "update_settings", description="Command type"
+    )
+    settings: SwarmSettings = Field(description="New settings")
+
+
+class SwarmForgetCommand(BaseModel):
+    """User deletes a long-term memory fact"""
+
+    type: Literal["forget"] = Field("forget", description="Command type")
+    fact_id: str = Field(description="Fact ID")
+
+
 SwarmClientCommand = Union[
-    SwarmUserMessageCommand, SwarmToggleAgentCommand, SwarmProposalDecisionCommand
+    SwarmUserMessageCommand,
+    SwarmToggleAgentCommand,
+    SwarmProposalDecisionCommand,
+    SwarmModeCommand,
+    SwarmSettingsCommand,
+    SwarmForgetCommand,
 ]
