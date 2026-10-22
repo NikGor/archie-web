@@ -1442,6 +1442,72 @@ body.voice-mode .orb {
     opacity: 0.8;
 }
 
+/* Swarm controls, settings and alerts (ARCHIE-238) */
+.swarm__top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.swarm__controls { display: flex; gap: 0.375rem; }
+.swarm-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 0.75rem;
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.06);
+    transition: background 0.15s, color 0.15s;
+}
+.swarm-mode:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.swarm-mode--active { color: rgb(103, 232, 249); background: rgba(34, 211, 238, 0.16); box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.45); }
+.swarm-mode--stop.swarm-mode--active { color: rgb(252, 165, 165); background: rgba(248, 113, 113, 0.14); box-shadow: 0 0 0 1px rgba(252, 165, 165, 0.45); }
+.swarm-mode--armed { color: #fff; background: rgba(239, 68, 68, 0.55); }
+.swarm__schedule { margin-top: 0.375rem; font-size: 0.75rem; color: rgba(255, 255, 255, 0.5); }
+.swarm__input:disabled, .swarm__send:disabled { opacity: 0.45; cursor: not-allowed; }
+.swarm-settings {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.swarm-settings__form { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; }
+.swarm-settings__group { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.swarm-settings__group legend { margin-bottom: 0.25rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.45); }
+.swarm-settings__group--memory { grid-column: 1 / -1; }
+.swarm-settings__group label { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.8125rem; color: rgba(255, 255, 255, 0.75); }
+.swarm-settings__pair { display: inline-flex; align-items: center; gap: 0.25rem; }
+.swarm-settings__group input[type="number"], .swarm-settings__group input[type="text"] {
+    padding: 0.25rem 0.4rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.07);
+    color-scheme: dark;
+    outline: none;
+}
+.swarm-settings__group input[type="number"] { width: 3.5rem; }
+.swarm-settings__group input.swarm-settings__time[type="text"] { width: 3.75rem; flex: none; text-align: center; }
+.swarm-settings__group input[type="text"] { flex: 1; min-width: 0; }
+.swarm-settings__group input:focus { box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.6); }
+.swarm-settings__tasks { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+.swarm-settings__group .swarm-settings__check { justify-content: flex-start; gap: 0.3rem; }
+.swarm-settings__footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; }
+.swarm-settings__error { font-size: 0.75rem; color: rgb(252, 165, 165); }
+.swarm-settings__save { padding: 0.35rem 1rem; border-radius: 0.75rem; font-size: 0.8125rem; color: rgb(103, 232, 249); background: rgba(34, 211, 238, 0.14); }
+.swarm-settings__save:hover { background: rgba(34, 211, 238, 0.24); }
+.swarm-memory { display: flex; flex-direction: column; gap: 0.25rem; }
+.swarm-fact { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0.5rem; border-radius: 0.5rem; font-size: 0.8125rem; background: rgba(255, 255, 255, 0.04); }
+.swarm-fact--empty { color: rgba(255, 255, 255, 0.45); background: none; }
+.swarm-fact__forget { flex-shrink: 0; color: rgba(255, 255, 255, 0.4); }
+.swarm-fact__forget:hover { color: rgb(252, 165, 165); }
+.swarm-msg--alert .swarm-msg__bubble { box-shadow: 0 0 0 1px color-mix(in srgb, var(--agent-color) 35%, transparent); }
+.swarm-msg--normal .swarm-msg__bubble { box-shadow: 0 0 0 1px rgba(253, 224, 71, 0.45); }
+.swarm-msg--high .swarm-msg__bubble { background: rgba(248, 113, 113, 0.1); box-shadow: 0 0 0 1px rgba(252, 165, 165, 0.6); }
+.swarm-msg__label--low { color: rgba(255, 255, 255, 0.5); }
+.swarm-msg__label--normal { color: rgb(253, 224, 71); }
+.swarm-msg__label--high { color: rgb(252, 165, 165); opacity: 1; }
+
 /* ── Prompt test suite (ARCHIE-208) ────────────────────────────────── */
 #prompts-view { padding: 0; overflow: hidden; }
 .pe {
