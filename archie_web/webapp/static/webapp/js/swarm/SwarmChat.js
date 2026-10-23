@@ -107,6 +107,17 @@ function renderSwarmMessage(message) {
     const agent = swarmState.agents[message.sender] || {
         agent_id: message.sender, display_name: message.sender, icon: 'bot', color: '#888', role: '',
     };
+    if (message.kind === 'check') {
+        // A spontaneous check that found nothing new (ARCHIE-242); click shows the whole note.
+        return `
+            <div class="swarm-msg swarm-msg--check" style="--agent-color:${agent.color}">
+                <i data-lucide="${agent.icon}" class="w-3 h-3"></i>
+                <span class="swarm-check__time">${swarmFormatTime(message.created_at)}</span>
+                <span class="swarm-msg__name">@${agent.agent_id}</span>
+                <span class="swarm-check__label">ничего нового</span>
+                <span class="swarm-check__note">${swarmEscape(message.text)}</span>
+            </div>`;
+    }
     if (message.kind === 'opinion') {
         return `
             <div class="swarm-msg swarm-msg--opinion" style="--agent-color:${agent.color}"
@@ -434,6 +445,10 @@ function initSwarmChat() {
         if (!button) return;
         const agent = swarmState.agents[button.dataset.agentId];
         swarmSend({ type: 'toggle_agent', agent_id: agent.agent_id, enabled: !agent.enabled });
+    });
+    document.getElementById('swarm-feed').addEventListener('click', (e) => {
+        const check = e.target.closest('.swarm-msg--check');
+        if (check) check.classList.toggle('swarm-msg--open');
     });
     document.getElementById('swarm-suggestions').addEventListener('click', (e) => {
         const button = e.target.closest('[data-agent-id]');
