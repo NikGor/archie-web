@@ -47,6 +47,8 @@ const CM_REASON_LABELS = {
 };
 // The API judges at most 200 conversations per run, so 200 means «all pending»
 const CM_RUN_ALL = 200;
+const CM_HANDLING_LABELS = { in_progress: 'В работе', fixed: 'Исправлено' };
+const CM_JIRA_URL = 'https://badich.atlassian.net/browse/';
 const CM_RUN_SIZES = [10, 20, 50, 100, CM_RUN_ALL];
 // Prompt specs a turn is judged against (agent app/monitoring/spec_rules.py)
 const CM_SPEC_LABELS = { outcome: 'Результат', goal: 'Цель запроса', cmd_prompt: 'Stage 1 · инструменты', assistant_prompt: 'Общие правила' };
@@ -62,7 +64,7 @@ const cmState = {
     page: 1,
     pages: 1,
     total: 0,
-    filter: { grade: '', unreviewed: false, reason: '' },
+    filter: { grade: '', handling: '', reason: '' },
     open: new Map(),      // conversation_id -> detail (null while loading)
     expandedText: new Set(),
     expandedRules: new Set(),   // message ids with all rules shown
@@ -109,7 +111,7 @@ async function cmLoadConversations(page = 1) {
     const params = new URLSearchParams({ page });
     if (cmState.filter.grade) params.set('grade', cmState.filter.grade);
     if (cmState.filter.reason) params.set('reason', cmState.filter.reason);
-    if (cmState.filter.unreviewed) params.set('unreviewed', '1');
+    if (cmState.filter.handling) params.set('handling', cmState.filter.handling);
     const data = await cmFetch(`/conversations/?${params}`);
     cmState.conversations = data.conversations;
     cmState.page = data.page;
@@ -146,14 +148,47 @@ async function cmToggleConversation(conversationId) {
     cmRender();
 }
 
-async function cmMarkReviewed(conversationId) {
+// Handling: what was done about a conversation's bad turns (ARCHIE-213)
+async function cmSetHandling(conversationId, status) {
+    const input = document.querySelector(`[data-cm-jira-for="${CSS.escape(conversationId)}"]`);
+    const jiraKey = input ? input.value.trim() : '';
     try {
-        await cmFetch(`/conversations/${encodeURIComponent(conversationId)}/review/`, { method: 'POST' });
-        cmState.open.delete(conversationId);
+        await cmFetch(`/conversations/${encodeURIComponent(conversationId)}/handling/`, {
+            method: 'POST',
+            body: JSON.stringify({ status, jira_key: jiraKey }),
+        });
         await cmRefresh();
     } catch (error) {
         cmSetError(error);
     }
+}
+
+function cmJiraLink(key) {
+    return key
+        ? `<a href="${CM_JIRA_URL}${encodeURIComponent(key)}" target="_blank" rel="noopener" class="cm-jira">${peEscape(key)}</a>`
+        : '';
+}
+
+function cmHandlingBadge(handling, withKey = true) {
+    if (!handling) return '';
+    const fixed = handling.status === 'fixed';
+    return `<span class="cm-handling cm-handling--${handling.status}" title="${peEscape(handling.updated_by || '')} · ${peFormatDate(handling.updated_at)}">
+        <i data-lucide="${fixed ? 'check-circle-2' : 'wrench'}" class="w-3 h-3"></i>
+        ${CM_HANDLING_LABELS[handling.status]}${withKey && handling.jira_key ? ` · ${peEscape(handling.jira_key)}` : ''}</span>`;
+}
+
+function cmRenderHandlingControls(conversationId, handling) {
+    const current = handling ? handling.status : 'none';
+    const buttons = [['in_progress', 'wrench', 'В работу'], ['fixed', 'check-circle-2', 'Исправлено'], ['none', 'rotate-ccw', 'Снять отметку']]
+        .filter(([status]) => status !== current)
+        .map(([status, icon, label]) => `<button class="pe-btn pe-btn--small" data-cm-handle="${status}" data-cm-handle-id="${peEscape(conversationId)}">
+            <i data-lucide="${icon}" class="w-4 h-4"></i> ${label}</button>`).join('');
+    return `
+        <div class="cm-handling-bar">
+            <span class="pe-muted">Обработка:</span> ${handling ? `${cmHandlingBadge(handling, false)} ${cmJiraLink(handling.jira_key)}` : '<span class="pe-muted">не обработано</span>'}
+            <input class="cm-jira-input" data-cm-jira-for="${peEscape(conversationId)}" placeholder="ARCHIE-…" value="${peEscape(handling ? handling.jira_key : '')}">
+            ${buttons}
+        </div>`;
 }
 
 // --- Runs ---
@@ -284,11 +319,13 @@ function cmRenderRunBox() {
 function cmRenderFilters() {
     const chips = [['', 'Все'], ...[...CM_GRADES, 'pending'].map(grade => [grade, CM_GRADE_LABELS[grade]])].map(([grade, label]) =>
         `<button class="pe-chip pe-chip--btn ${cmState.filter.grade === grade ? 'pe-chip--on' : ''}" data-cm-grade="${grade}">${label}</button>`).join('');
+    const counts = (cmState.summary && cmState.summary.handling) || {};
+    const handling = [['', 'Любая обработка'], ['none', 'Не обработано'], ['in_progress', CM_HANDLING_LABELS.in_progress], ['fixed', CM_HANDLING_LABELS.fixed]]
+        .map(([status, label]) => `<button class="pe-chip pe-chip--btn ${cmState.filter.handling === status ? 'pe-chip--on' : ''}" data-cm-handling="${status}">
+            ${label}${counts[status] ? ` <span class="cm-reason__count">${counts[status]}</span>` : ''}</button>`).join('');
     return `
-        <div class="cm-filters">
-            ${chips}
-            <label class="cm-check"><input type="checkbox" id="cm-unreviewed" ${cmState.filter.unreviewed ? 'checked' : ''}> только непросмотренные</label>
-        </div>`;
+        <div class="cm-filters">${chips}</div>
+        <div class="cm-filters">${handling}</div>`;
 }
 
 function cmRenderToolCalls(evaluation) {
@@ -372,7 +409,7 @@ function cmRenderEvaluation(evaluation, messageId) {
             <div class="cm-eval__row"><span class="pe-muted">Инструменты:</span> ${cmRenderToolCalls(evaluation)}</div>
             ${skills}
             <div class="pe-muted">${peEscape(evaluation.judge_model)} · ${peFormatDate(evaluation.evaluated_at)}${cost}
-                ${evaluation.reviewed_at ? ` · просмотрено ${peEscape(evaluation.reviewed_by)}` : ''}</div>
+</div>
         </div>`;
 }
 
@@ -410,9 +447,7 @@ function cmRenderConversation(conversation) {
     let body = '';
     if (isOpen) {
         body = detail
-            ? `<div class="cm-thread">${detail.messages.map(cmRenderMessage).join('')}
-                ${conversation.unreviewed ? `<button class="pe-btn pe-btn--small" data-cm-review="${peEscape(id)}">
-                    <i data-lucide="check" class="w-4 h-4"></i> Отметить просмотренным</button>` : ''}</div>`
+            ? `<div class="cm-thread">${cmRenderHandlingControls(id, conversation.handling)}${detail.messages.map(cmRenderMessage).join('')}</div>`
             : '<div class="pe-muted cm-thread">Загрузка…</div>';
     }
     return `
@@ -424,8 +459,7 @@ function cmRenderConversation(conversation) {
                         <span class="cm-conv__title">${peEscape(conversation.title)}</span>
                         <span class="pe-prompt__desc">${peFormatDate(conversation.last_message_at)} · ${evaluated}</span>
                     </span>
-                    <span class="pe-prompt__counts">${counts}${pending}
-                        ${conversation.unreviewed ? '<span class="pe-badge pe-badge--warn">новое</span>' : ''}</span>
+                    <span class="pe-prompt__counts">${cmHandlingBadge(conversation.handling)}${counts}${pending}</span>
                     <i data-lucide="${isOpen ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i>
                 </button>
                 ${judge}
@@ -502,7 +536,12 @@ function cmHandleClick(event) {
         cmState.filter.grade = cmState.filter.grade === grade ? '' : grade;
         cmLoadConversations().then(cmRender).catch(cmSetError);
     } else if (target.dataset.cmOpen) cmToggleConversation(target.dataset.cmOpen);
-    else if (target.dataset.cmReview) cmMarkReviewed(target.dataset.cmReview);
+    else if (target.dataset.cmHandle) cmSetHandling(target.dataset.cmHandleId, target.dataset.cmHandle);
+    else if (target.dataset.cmHandling !== undefined) {
+        const status = target.dataset.cmHandling;
+        cmState.filter.handling = cmState.filter.handling === status ? '' : status;
+        cmLoadConversations().then(cmRender).catch(cmSetError);
+    }
     else if (target.dataset.cmRules) {
         const id = target.dataset.cmRules;
         if (cmState.expandedRules.has(id)) cmState.expandedRules.delete(id);
@@ -517,10 +556,7 @@ function cmHandleClick(event) {
 }
 
 function cmHandleChange(event) {
-    if (event.target.id === 'cm-unreviewed') {
-        cmState.filter.unreviewed = event.target.checked;
-        cmLoadConversations().then(cmRender).catch(cmSetError);
-    } else if (event.target.id === 'cm-run-size') {
+    if (event.target.id === 'cm-run-size') {
         cmState.runSize = Number(event.target.value);
     }
 }
