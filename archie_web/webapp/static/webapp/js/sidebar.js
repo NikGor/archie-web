@@ -789,6 +789,7 @@ const ASSISTANT_PERSONAS = [
     { value: 'flirty', label: 'Flirty' },
     { value: 'futurebot', label: 'Futurebot' },
     { value: 'butler', label: 'Butler' },
+    { value: 'marcus', label: 'Marcus' },
 ];
 
 // Open assistant settings modal
