@@ -390,8 +390,8 @@ const IntegratedChatAssistant = () => {
         setIsLoading(true);
 
         try {
-            const selectedCommandModel = window.selectedCommandModel || localStorage.getItem('selectedCommandModel') || 'gpt-4.1';
-            const selectedFinalOutputModel = window.selectedFinalOutputModel || localStorage.getItem('selectedFinalOutputModel') || 'gpt-4.1';
+            const selectedCommandModel = window.selectedCommandModel || localStorage.getItem('selectedCommandModel') || 'gpt-6-luna';
+            const selectedFinalOutputModel = window.selectedFinalOutputModel || localStorage.getItem('selectedFinalOutputModel') || 'gpt-6-luna';
             const demoMode = window.demoMode || localStorage.getItem('demoMode') === 'true';
             const noImage = window.noImage || localStorage.getItem('noImage') === 'true';
             const persona = (window.selectedStyle || localStorage.getItem('selectedStyle') || 'butler').toLowerCase();
@@ -605,8 +605,8 @@ const IntegratedChatAssistant = () => {
         setIsLoading(true);
 
         try {
-            const selectedCommandModel = window.selectedCommandModel || localStorage.getItem('selectedCommandModel') || 'gpt-4.1';
-            const selectedFinalOutputModel = window.selectedFinalOutputModel || localStorage.getItem('selectedFinalOutputModel') || 'gpt-4.1';
+            const selectedCommandModel = window.selectedCommandModel || localStorage.getItem('selectedCommandModel') || 'gpt-6-luna';
+            const selectedFinalOutputModel = window.selectedFinalOutputModel || localStorage.getItem('selectedFinalOutputModel') || 'gpt-6-luna';
             const demoMode = window.demoMode || localStorage.getItem('demoMode') === 'true';
             const noImage = window.noImage || localStorage.getItem('noImage') === 'true';
             const persona = (window.selectedStyle || localStorage.getItem('selectedStyle') || 'butler').toLowerCase();

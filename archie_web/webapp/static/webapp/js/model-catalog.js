@@ -2,6 +2,9 @@
 // New models are offered only in stages that passed the sandbox.
 const AI_MODELS = {
     "openai": [
+        "gpt-6-luna",
+        "gpt-6",
+        "gpt-6.1",
         "gpt-4.1",
         "gpt-5.6-luna",
         "gpt-4.1-mini",
@@ -357,6 +360,9 @@ const AI_VISION_MODELS = [
     "gpt-5.4-nano",
     "gpt-5.4-pro",
     "gpt-5.6-luna",
+    "gpt-6",
+    "gpt-6-luna",
+    "gpt-6.1",
     "meta/muse-spark-open",
     "meta/muse-wonder",
     "minimax/minimax-m3",

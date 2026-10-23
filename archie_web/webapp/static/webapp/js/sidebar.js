@@ -629,8 +629,8 @@ const GEN_UI_LEVELS = {
         responseFormats: ["plain"],
         fixedFormat: "plain",
         defaults: {
-            commandModel: "gpt-4.1",
-            finalOutputModel: "gpt-4.1"
+            commandModel: "gpt-6-luna",
+            finalOutputModel: "gpt-6-luna"
         }
     },
     2: {
@@ -642,8 +642,8 @@ const GEN_UI_LEVELS = {
         responseFormats: [],
         fixedFormat: "level2_answer",
         defaults: {
-            commandModel: "gpt-4.1",
-            finalOutputModel: "gpt-4.1"
+            commandModel: "gpt-6-luna",
+            finalOutputModel: "gpt-6-luna"
         }
     },
     3: {
@@ -655,8 +655,8 @@ const GEN_UI_LEVELS = {
         responseFormats: [],
         fixedFormat: "level3_answer",
         defaults: {
-            commandModel: "gpt-4.1",
-            finalOutputModel: "gpt-4.1"
+            commandModel: "gpt-6-luna",
+            finalOutputModel: "gpt-6-luna"
         }
     },
     4: {
@@ -668,8 +668,8 @@ const GEN_UI_LEVELS = {
         responseFormats: ["ui_answer"],
         fixedFormat: "ui_answer",
         defaults: {
-            commandModel: "gpt-4.1",
-            finalOutputModel: "gpt-4.1"
+            commandModel: "gpt-6-luna",
+            finalOutputModel: "gpt-6-luna"
         }
     },
     5: {
@@ -682,8 +682,8 @@ const GEN_UI_LEVELS = {
         fixedFormat: "ui_answer",
         comingSoon: true,
         defaults: {
-            commandModel: "gpt-4.1",
-            finalOutputModel: "gpt-4.1"
+            commandModel: "gpt-6-luna",
+            finalOutputModel: "gpt-6-luna"
         }
     }
 };
@@ -737,8 +737,15 @@ function getSelectedCommandModel() {
         }
         localStorage.setItem('commandModelDefaultMigrated', '1');
     }
+    // One-time switch of the old stored default gpt-4.1 to gpt-6-luna (command and final output)
+    if (!localStorage.getItem('gpt6LunaDefaultMigrated')) {
+        for (const key of ['selectedCommandModel', 'selectedFinalOutputModel']) {
+            if (localStorage.getItem(key) === 'gpt-4.1') localStorage.setItem(key, 'gpt-6-luna');
+        }
+        localStorage.setItem('gpt6LunaDefaultMigrated', '1');
+    }
     const stored = localStorage.getItem('selectedCommandModel');
-    const model = getAvailableModels('command').includes(stored) ? stored : 'gpt-4.1';
+    const model = getAvailableModels('command').includes(stored) ? stored : 'gpt-6-luna';
     localStorage.setItem('selectedCommandModel', model);
     return model;
 }
@@ -753,7 +760,7 @@ function setSelectedCommandModel(model) {
 function getSelectedFinalOutputModel() {
     const stored = localStorage.getItem('selectedFinalOutputModel');
     const stage = ['auto', 'ui_answer', 'level2_answer', 'level3_answer', 'dashboard', 'widget'].includes(getSelectedResponseFormat()) ? 'final_ui' : 'final_plain';
-    const model = getAvailableModels(stage).includes(stored) ? stored : 'gpt-4.1';
+    const model = getAvailableModels(stage).includes(stored) ? stored : 'gpt-6-luna';
     localStorage.setItem('selectedFinalOutputModel', model);
     return model;
 }
