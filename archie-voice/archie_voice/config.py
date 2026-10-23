@@ -76,6 +76,7 @@ except ImportError:
         "flirty": "Zephyr",
         "futurebot": "Charon",
         "butler": "Sadachbia",
+        "marcus": "Fenrir",
     }
 
 # --- Announce (scheduled voice messages over Redis pub/sub) -----------------
