@@ -15,6 +15,7 @@ PERSONA_VOICES = {
     "flirty": "Zephyr",  # Bright (female)
     "futurebot": "Charon",  # Informative — deep, techy (male)
     "butler": "Sadachbia",  # Lively
+    "marcus": "Fenrir",  # Excitable — jolly Swabian (male)
 }
 
 
