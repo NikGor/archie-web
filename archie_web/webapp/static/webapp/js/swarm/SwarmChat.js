@@ -2,6 +2,8 @@
 // Long-lived WS to the agent's /ws_swarm: history on connect, then live events.
 // Protocol: archie_shared.swarm.models (SwarmServerEvent / SwarmClientCommand).
 // ARCHIE-238: Play/Pause/Stop, settings of the spontaneous checks, long-term memory.
+// ARCHIE-249: council discussion in rounds led by the consul, plan steps,
+// a model per agent; all settings live in one modal window.
 
 const SWARM_RECONNECT_MS = 3000;
 const SWARM_MAX_MESSAGES = 200;
@@ -10,17 +12,23 @@ const SWARM_STOP_CONFIRM_MS = 3000;
 const SWARM_TASKS = { home: 'Дом', mail: 'Почта', calendar: 'Календарь', football: 'Футбол', weather: 'Погода' };
 const SWARM_IMPORTANCE = { low: 'к сведению', normal: 'на табло', high: 'важно · голос' };
 const SWARM_OUTCOMES = { silent: 'ничего нового', reported: 'есть новости', failed: 'ошибка' };
+const SWARM_PROVIDERS = { openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', 'x-ai': 'xAI' };
+const SWARM_SETTINGS_TABS = { agents: 'Агенты', checks: 'Проверки и голос', memory: 'Память' };
+const SWARM_TIME_PATTERN = '([01][0-9]|2[0-3]):[0-5][0-9]';
+const SWARM_STEP_PATTERN = /^(\d+)\/(\d+) @([a-z][a-z0-9_]*): ([\s\S]*)$/;
 
 const swarmState = {
     ws: null,
     active: false,
     reconnectTimer: null,
     agents: {},
+    models: [],
     messages: [],
     typing: new Set(),
     control: null,
     stopArmedUntil: 0,
     memoryTab: 'lasting',
+    settingsTab: 'agents',
 };
 
 function swarmEscape(text) {
@@ -36,6 +44,21 @@ function swarmGroups() {
         agent.groups.forEach(group => { (groups[group] = groups[group] || []).push(agent); });
     });
     return groups;
+}
+
+function swarmAgent(agentId) {
+    return swarmState.agents[agentId] || {
+        agent_id: agentId, display_name: agentId, icon: 'bot', color: '#888', role: '', groups: [],
+    };
+}
+
+// "anthropic/claude-sonnet-5.5" -> "claude-sonnet-5.5"; OpenAI models have no prefix.
+function swarmModelName(model) {
+    return model ? model.split('/').pop() : '';
+}
+
+function swarmProvider(model) {
+    return model && model.includes('/') ? model.split('/')[0] : 'openai';
 }
 
 // Chat paths ("/c/<id>/") and web links become links (alert chats, ARCHIE-247).
@@ -65,26 +88,37 @@ function swarmSend(command) {
     }
 }
 
-// --- Rendering ---
-
-function renderSwarmRoster() {
-    const roster = document.getElementById('swarm-roster');
-    const renderChip = agent => `
-        <button class="swarm-agent ${agent.enabled ? '' : 'swarm-agent--off'}"
-                style="--agent-color:${agent.color}" data-agent-id="${agent.agent_id}"
-                title="${swarmEscape(agent.description)} — ${agent.enabled ? 'нажми, чтобы усыпить' : 'нажми, чтобы разбудить'}">
-            <i data-lucide="${agent.icon}" class="w-4 h-4"></i>
-            <span>@${agent.agent_id}</span>
-            <span class="swarm-agent__role">${agent.role}</span>
-        </button>`;
-    const solo = Object.values(swarmState.agents).filter(agent => !agent.groups.length);
-    const groups = Object.entries(swarmGroups()).map(([group, members]) => `
-        <div class="swarm-group" title="@${group} — участники отвечают по очереди">
-            <span class="swarm-group__name">@${group}</span>${members.map(renderChip).join('')}
-        </div>`);
-    roster.innerHTML = solo.map(renderChip).join('') + groups.join('');
-    lucide.createIcons({ nodes: [roster] });
+function swarmIcons(node) {
+    lucide.createIcons({ nodes: [node] });
 }
+
+// --- Header: who is awake ---
+
+function renderSwarmCrew() {
+    const crew = document.getElementById('swarm-crew');
+    const agents = Object.values(swarmState.agents);
+    const council = agents.filter(a => a.groups.includes('council'))
+        .sort((a, b) => Number(b.chair) - Number(a.chair));
+    const home = agents.filter(a => !a.groups.length);
+    const avatar = agent => `
+        <span class="swarm-avatar ${agent.enabled ? '' : 'swarm-avatar--off'} ${agent.chair ? 'swarm-avatar--chair' : ''}"
+              style="--agent-color:${agent.color}"
+              title="@${agent.agent_id}${agent.chair ? ' · консул' : ''} · ${swarmEscape(swarmModelName(agent.model))}${agent.enabled ? '' : ' · спит'}">
+            <i data-lucide="${agent.icon}" class="w-3.5 h-3.5"></i></span>`;
+    const awake = list => list.filter(a => a.enabled).length;
+    crew.innerHTML = `
+        <button type="button" class="swarm-crew__group" data-open-settings="agents" title="Совет: настроить участников">
+            <span class="swarm-crew__label">Совет</span>
+            <span class="swarm-crew__avatars">${council.map(avatar).join('')}</span>
+        </button>
+        <button type="button" class="swarm-crew__group" data-open-settings="agents" title="Агенты дома: настроить">
+            <span class="swarm-crew__label">Дом ${awake(home)}/${home.length}</span>
+            <span class="swarm-crew__avatars">${home.map(avatar).join('')}</span>
+        </button>`;
+    swarmIcons(crew);
+}
+
+// --- Feed ---
 
 function renderSwarmActions(actions) {
     if (!actions.length) return '';
@@ -97,13 +131,62 @@ function renderSwarmActions(actions) {
 function renderSwarmUsage(usage) {
     if (!usage) return '';
     const tokens = usage.input_tokens + usage.output_tokens;
-    return `<span class="swarm-msg__usage" title="${swarmEscape(usage.model)}">${tokens} tok · $${usage.total_cost.toFixed(4)}</span>`;
+    return `<span class="swarm-msg__usage" title="${tokens} токенов · $${usage.total_cost.toFixed(4)}">${swarmEscape(swarmModelName(usage.model))} · $${usage.total_cost.toFixed(4)}</span>`;
 }
 
-function renderSwarmMessage(message) {
+// A plan step is done when its agent (or the system, on failure) answered it.
+function swarmStepState(task, agentId) {
+    const reply = swarmState.messages.find(m => m.reply_to === task.message_id
+        && (m.sender === agentId || m.sender === 'system'));
+    if (reply) return reply.sender === 'system' ? 'failed' : 'done';
+    return swarmState.typing.has(agentId) ? 'running' : 'waiting';
+}
+
+function renderSwarmTask(message) {
+    const match = message.text.match(SWARM_STEP_PATTERN);
+    if (!match) return '';
+    const [, number, total, agentId, task] = match;
+    const agent = swarmAgent(agentId);
+    const state = swarmStepState(message, agentId);
+    const icon = { done: 'check', failed: 'x', running: 'loader-circle', waiting: 'clock' }[state];
+    return `
+        <div class="swarm-step swarm-step--${state}" style="--agent-color:${agent.color}">
+            <span class="swarm-step__number">${number}/${total}</span>
+            <i data-lucide="${agent.icon}" class="w-3.5 h-3.5 swarm-step__agent"></i>
+            <span class="swarm-msg__name">@${agent.agent_id}</span>
+            <span class="swarm-step__task">${swarmFormatText(task)}</span>
+            <i data-lucide="${icon}" class="w-3.5 h-3.5 swarm-step__state"></i>
+        </div>`;
+}
+
+function renderSwarmOpinion(message, previous) {
+    const agent = swarmAgent(message.sender);
+    // A divider opens every discussion round of one trigger.
+    const newRound = message.round && !(previous && previous.kind === 'opinion'
+        && previous.reply_to === message.reply_to && previous.round === message.round);
+    const divider = newRound
+        ? `<div class="swarm-round"><span>обсуждение · раунд ${message.round}</span></div>` : '';
+    return `${divider}
+        <div class="swarm-msg swarm-msg--opinion ${agent.chair ? 'swarm-msg--remark' : ''}" style="--agent-color:${agent.color}">
+            <div class="swarm-msg__avatar swarm-msg__avatar--small"><i data-lucide="${agent.icon}" class="w-3.5 h-3.5"></i></div>
+            <div class="swarm-msg__body">
+                <div class="swarm-msg__head">
+                    <span class="swarm-msg__name">@${agent.agent_id}</span>
+                    ${agent.chair ? '<span class="swarm-msg__label">консул</span>' : ''}
+                    <span class="swarm-msg__meta">${swarmFormatTime(message.created_at)}</span>
+                    ${renderSwarmUsage(message.usage)}
+                </div>
+                <div class="swarm-msg__text">${swarmFormatText(message.text)}</div>
+            </div>
+        </div>`;
+}
+
+function renderSwarmMessage(message, previous) {
     if (message.kind === 'system') {
         return `<div class="swarm-msg swarm-msg--system">${swarmEscape(message.text)}</div>`;
     }
+    if (message.kind === 'task') return renderSwarmTask(message);
+    if (message.kind === 'opinion') return renderSwarmOpinion(message, previous);
     if (message.sender === 'user') {
         return `
             <div class="swarm-msg swarm-msg--user">
@@ -111,9 +194,7 @@ function renderSwarmMessage(message) {
                 <div class="swarm-msg__meta">${swarmFormatTime(message.created_at)}</div>
             </div>`;
     }
-    const agent = swarmState.agents[message.sender] || {
-        agent_id: message.sender, display_name: message.sender, icon: 'bot', color: '#888', role: '',
-    };
+    const agent = swarmAgent(message.sender);
     if (message.kind === 'check') {
         // A spontaneous check that found nothing new (ARCHIE-242); click shows the whole note.
         return `
@@ -125,17 +206,8 @@ function renderSwarmMessage(message) {
                 <span class="swarm-check__note">${swarmEscape(message.text)}</span>
             </div>`;
     }
-    if (message.kind === 'opinion') {
-        return `
-            <div class="swarm-msg swarm-msg--opinion" style="--agent-color:${agent.color}"
-                 title="${swarmFormatTime(message.created_at)}">
-                <i data-lucide="${agent.icon}" class="w-3 h-3"></i>
-                <span class="swarm-msg__name">@${agent.agent_id}</span>
-                <span>${swarmFormatText(message.text)}</span>
-            </div>`;
-    }
     const label = message.kind === 'decision'
-        ? '<span class="swarm-msg__label">⚖ решение совета</span>'
+        ? '<span class="swarm-msg__label">⚖ решение</span>'
         : message.kind === 'alert'
             ? `<span class="swarm-msg__label swarm-msg__label--${message.importance || 'low'}">🔔 ${SWARM_IMPORTANCE[message.importance] || 'оповещение'}</span>`
             : '';
@@ -158,24 +230,37 @@ function renderSwarmMessage(message) {
 function renderSwarmFeed() {
     const feed = document.getElementById('swarm-feed');
     const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
-    feed.innerHTML = swarmState.messages.length
-        ? swarmState.messages.map(renderSwarmMessage).join('')
-        : '<div class="swarm-empty">Рой молчит. Он сам проверяет дом, почту, календарь и футбол и пишет, только когда есть новости. Можно написать рою — ответит совет. Или обратись напрямую: @light, @climate, @football.</div>';
-    lucide.createIcons({ nodes: [feed] });
+    const messages = swarmState.messages;
+    feed.innerHTML = messages.length
+        ? messages.map((message, i) => renderSwarmMessage(message, messages[i - 1])).join('')
+        : `<div class="swarm-empty">
+               <i data-lucide="messages-square" class="w-8 h-8"></i>
+               <p>Рой молчит. Он сам проверяет дом, почту, календарь и футбол и пишет, только когда есть новости.</p>
+               <p>Напиши рою — совет обсудит, а дворецкий раздаст задачи. Или обратись напрямую: @light, @climate, @football.</p>
+           </div>`;
+    swarmIcons(feed);
     if (atBottom) feed.scrollTop = feed.scrollHeight;
 }
 
 function renderSwarmTyping() {
     const typing = document.getElementById('swarm-typing');
-    const names = [...swarmState.typing].map(id => `@${id}`);
-    typing.textContent = names.length ? `${names.join(', ')} ${names.length > 1 ? 'думают' : 'думает'}…` : '';
+    const agents = [...swarmState.typing].map(swarmAgent);
+    typing.innerHTML = agents.length ? `
+        <span class="swarm-typing__avatars">${agents.map(agent => `
+            <span class="swarm-avatar swarm-avatar--busy" style="--agent-color:${agent.color}" title="@${agent.agent_id}">
+                <i data-lucide="${agent.icon}" class="w-3 h-3"></i></span>`).join('')}</span>
+        <span>${agents.map(a => '@' + a.agent_id).join(', ')} ${agents.length > 1 ? 'думают' : 'думает'}</span>
+        <span class="swarm-typing__dots"><i></i><i></i><i></i></span>` : '';
+    swarmIcons(typing);
 }
 
 function renderSwarmStatus(text) {
-    document.getElementById('swarm-status').textContent = text;
+    const status = document.getElementById('swarm-status');
+    status.textContent = text;
+    status.classList.toggle('hidden', !text);
 }
 
-// --- Controls, settings and memory (ARCHIE-238) ---
+// --- Mode controls (ARCHIE-238) ---
 
 function renderSwarmControls() {
     const control = swarmState.control;
@@ -186,7 +271,7 @@ function renderSwarmControls() {
         button.classList.toggle('swarm-mode--active', control.mode === mode);
         if (mode === 'stopped') {
             button.classList.toggle('swarm-mode--armed', stopArmed);
-            button.querySelector('span').textContent = stopArmed ? 'Очистить чат?' : 'Stop';
+            button.querySelector('span').textContent = stopArmed ? 'Очистить?' : 'Stop';
         }
     });
     const parts = [];
@@ -208,10 +293,111 @@ function renderSwarmControls() {
     document.querySelector('.swarm__send').disabled = stopped;
 }
 
-function renderSwarmSettings() {
+function setSwarmMode(mode) {
+    if (mode === 'stopped' && swarmState.control.mode !== 'stopped' && Date.now() >= swarmState.stopArmedUntil) {
+        // Stop clears the chat: the first click only asks to confirm.
+        swarmState.stopArmedUntil = Date.now() + SWARM_STOP_CONFIRM_MS;
+        renderSwarmControls();
+        setTimeout(renderSwarmControls, SWARM_STOP_CONFIRM_MS);
+        return;
+    }
+    swarmState.stopArmedUntil = 0;
+    swarmSend({ type: 'set_mode', mode });
+}
+
+// --- Settings modal: agents, checks and voice, memory ---
+
+function openSwarmSettings(tab) {
+    showSwarmSettingsTab(tab || swarmState.settingsTab);
+    document.getElementById('swarm-modal').classList.remove('hidden');
+    document.body.classList.add('swarm-modal-open');
+    renderSwarmSettings(true);
+}
+
+function closeSwarmSettings() {
+    document.getElementById('swarm-modal').classList.add('hidden');
+    document.body.classList.remove('swarm-modal-open');
+}
+
+function showSwarmSettingsTab(tab) {
+    swarmState.settingsTab = tab;
+    document.querySelectorAll('[data-settings-tab]').forEach(button => {
+        const active = button.dataset.settingsTab === tab;
+        button.classList.toggle('swarm-modal__tab--active', active);
+        button.setAttribute('aria-selected', active);
+    });
+    document.querySelectorAll('[data-settings-panel]').forEach(panel => {
+        panel.classList.toggle('hidden', panel.dataset.settingsPanel !== tab);
+    });
+}
+
+function renderSwarmModelOptions(agent) {
+    const groups = {};
+    swarmState.models.forEach(model => {
+        const provider = SWARM_PROVIDERS[swarmProvider(model)] || 'Другие';
+        (groups[provider] = groups[provider] || []).push(model);
+    });
+    // Big four first, the rest after them.
+    const order = [...Object.values(SWARM_PROVIDERS), 'Другие'];
+    return order.filter(name => groups[name]).map(name => `
+        <optgroup label="${name}">${groups[name].map(model => `
+            <option value="${swarmEscape(model)}" ${model === agent.model ? 'selected' : ''}>
+                ${swarmEscape(swarmModelName(model))}${model === agent.default_model ? ' · по умолчанию' : ''}</option>`).join('')}
+        </optgroup>`).join('');
+}
+
+function renderSwarmAgentRow(agent) {
+    const changed = agent.model && agent.model !== agent.default_model;
+    return `
+        <li class="swarm-agent-row ${agent.enabled ? '' : 'swarm-agent-row--off'}" style="--agent-color:${agent.color}">
+            <span class="swarm-agent-row__avatar"><i data-lucide="${agent.icon}" class="w-4 h-4"></i></span>
+            <div class="swarm-agent-row__info">
+                <div class="swarm-agent-row__title">
+                    <span class="swarm-msg__name">@${agent.agent_id}</span>
+                    ${agent.chair ? '<span class="swarm-badge swarm-badge--chair">консул</span>' : ''}
+                    ${agent.groups.length ? '' : `<span class="swarm-badge">${agent.role === 'action' ? 'действует' : 'наблюдает'}</span>`}
+                </div>
+                <div class="swarm-agent-row__description">${swarmEscape(agent.description)}</div>
+                <div class="swarm-agent-row__model">
+                    <span class="swarm-provider swarm-provider--${swarmProvider(agent.model)}">${SWARM_PROVIDERS[swarmProvider(agent.model)] || 'Другая'}</span>
+                    <select class="swarm-select" data-model-agent="${agent.agent_id}" aria-label="Модель @${agent.agent_id}">
+                        ${renderSwarmModelOptions(agent)}
+                    </select>
+                    ${changed ? `<button type="button" class="swarm-reset" data-reset-model="${agent.agent_id}" title="Вернуть ${swarmEscape(swarmModelName(agent.default_model))}">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i></button>` : ''}
+                </div>
+            </div>
+            <label class="swarm-switch" title="${agent.enabled ? 'Усыпить' : 'Разбудить'}">
+                <input type="checkbox" data-toggle-agent="${agent.agent_id}" ${agent.enabled ? 'checked' : ''}>
+                <span class="swarm-switch__track"></span>
+            </label>
+        </li>`;
+}
+
+function renderSwarmAgentList() {
+    const list = document.getElementById('swarm-agent-list');
+    if (!list || list.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
+    const agents = Object.values(swarmState.agents);
+    const council = agents.filter(a => a.groups.includes('council'))
+        .sort((a, b) => Number(b.chair) - Number(a.chair));
+    const home = agents.filter(a => !a.groups.length);
+    list.innerHTML = `
+        <section class="swarm-modal__section">
+            <h3>Совет</h3>
+            <p class="swarm-settings__hint">Участники обсуждают каждое событие независимо, каждый на своей модели. Консул ведёт раунды и раздаёт задачи агентам по очереди.</p>
+            <ul class="swarm-agent-list">${council.map(renderSwarmAgentRow).join('')}</ul>
+        </section>
+        <section class="swarm-modal__section">
+            <h3>Агенты дома</h3>
+            <ul class="swarm-agent-list">${home.map(renderSwarmAgentRow).join('')}</ul>
+        </section>`;
+    swarmIcons(list);
+}
+
+function renderSwarmSettings(force) {
     const control = swarmState.control;
     const form = document.getElementById('swarm-settings-form');
-    if (!control || form.contains(document.activeElement)) return;
+    if (!control || (!force && form.contains(document.activeElement))) return;
     const settings = control.settings;
     ['interval_min_minutes', 'interval_max_minutes', 'active_from', 'active_until',
         'voice_from_weekday', 'voice_from_weekend', 'voice_until'].forEach(name => {
@@ -233,7 +419,7 @@ function renderSwarmMemory() {
                     <i data-lucide="x" class="w-3.5 h-3.5"></i></button>
             </li>`).join('')
         : '<li class="swarm-fact swarm-fact--empty">Пусто. Скажи рою «запомни…» — например, «не говори про влажность».</li>';
-    lucide.createIcons({ nodes: [list] });
+    swarmIcons(list);
     // What the swarm chose to keep for today (ARCHIE-246); cleared at midnight.
     const today = swarmState.control ? swarmState.control.today : [];
     document.getElementById('swarm-today').innerHTML = today.length
@@ -273,8 +459,7 @@ function readSwarmSettings(form) {
 
 function saveSwarmSettings(e) {
     e.preventDefault();
-    const form = e.target;
-    const settings = readSwarmSettings(form);
+    const settings = readSwarmSettings(e.target);
     const error = document.getElementById('swarm-settings-error');
     if (!(settings.interval_min_minutes >= 1 && settings.interval_max_minutes <= 60
         && settings.interval_min_minutes <= settings.interval_max_minutes)) {
@@ -283,31 +468,91 @@ function saveSwarmSettings(e) {
     }
     error.textContent = '';
     swarmSend({ type: 'update_settings', settings });
-    document.activeElement.blur();
-    document.getElementById('swarm-settings').classList.add('hidden');
+    const saved = document.getElementById('swarm-settings-saved');
+    saved.classList.remove('hidden');
+    setTimeout(() => saved.classList.add('hidden'), 2000);
 }
 
-function setSwarmMode(mode) {
-    if (mode === 'stopped' && swarmState.control.mode !== 'stopped' && Date.now() >= swarmState.stopArmedUntil) {
-        // Stop clears the chat: the first click only asks to confirm.
-        swarmState.stopArmedUntil = Date.now() + SWARM_STOP_CONFIRM_MS;
-        renderSwarmControls();
-        setTimeout(renderSwarmControls, SWARM_STOP_CONFIRM_MS);
-        return;
-    }
-    swarmState.stopArmedUntil = 0;
-    swarmSend({ type: 'set_mode', mode });
+function swarmTimeInput(name) {
+    return `<input name="${name}" type="text" class="swarm-input swarm-input--time" pattern="${SWARM_TIME_PATTERN}"
+                   maxlength="5" inputmode="numeric" placeholder="ЧЧ:ММ" required>`;
+}
+
+function swarmModalHtml() {
+    return `
+        <div id="swarm-modal" class="swarm-modal hidden" role="dialog" aria-modal="true" aria-labelledby="swarm-modal-title">
+            <div class="swarm-modal__panel">
+                <header class="swarm-modal__header">
+                    <h2 id="swarm-modal-title"><i data-lucide="settings-2" class="w-5 h-5"></i> Настройки роя</h2>
+                    <button type="button" class="swarm-icon-button" data-close-settings title="Закрыть (Esc)">
+                        <i data-lucide="x" class="w-5 h-5"></i></button>
+                </header>
+                <nav class="swarm-modal__tabs" role="tablist">${Object.entries(SWARM_SETTINGS_TABS).map(([tab, name]) => `
+                    <button type="button" role="tab" class="swarm-modal__tab" data-settings-tab="${tab}">${name}</button>`).join('')}
+                </nav>
+                <div class="swarm-modal__body">
+                    <div data-settings-panel="agents" id="swarm-agent-list"></div>
+                    <form data-settings-panel="checks" id="swarm-settings-form" class="swarm-settings__form hidden">
+                        <section class="swarm-modal__section">
+                            <h3>Проверки</h3>
+                            <p class="swarm-settings__hint">Рой просыпается через случайную паузу и проверяет одну область.</p>
+                            <div class="swarm-field">
+                                <span>Пауза, мин</span>
+                                <span class="swarm-field__pair">
+                                    <input name="interval_min_minutes" type="number" min="1" max="60" class="swarm-input swarm-input--number" required> –
+                                    <input name="interval_max_minutes" type="number" min="1" max="60" class="swarm-input swarm-input--number" required></span>
+                            </div>
+                            <div class="swarm-field">
+                                <span>Работают</span>
+                                <span class="swarm-field__pair">${swarmTimeInput('active_from')} – ${swarmTimeInput('active_until')}</span>
+                            </div>
+                            <div class="swarm-chips">${Object.entries(SWARM_TASKS).map(([task, name]) => `
+                                <label class="swarm-check-chip"><input type="checkbox" name="tasks" value="${task}"><span>${name}</span></label>`).join('')}
+                            </div>
+                            <label class="swarm-field swarm-field--stack">
+                                <span>Команды</span>
+                                <input name="football_teams" type="text" class="swarm-input" placeholder="пусто — команды из футбольного скилла">
+                            </label>
+                        </section>
+                        <section class="swarm-modal__section">
+                            <h3>Голос</h3>
+                            <div class="swarm-field"><span>Будни с</span>${swarmTimeInput('voice_from_weekday')}</div>
+                            <div class="swarm-field"><span>Выходные с</span>${swarmTimeInput('voice_from_weekend')}</div>
+                            <div class="swarm-field"><span>До</span>${swarmTimeInput('voice_until')}</div>
+                        </section>
+                        <footer class="swarm-modal__footer">
+                            <span id="swarm-settings-error" class="swarm-settings__error"></span>
+                            <span id="swarm-settings-saved" class="swarm-settings__saved hidden">Сохранено</span>
+                            <button type="submit" class="swarm-button">Сохранить</button>
+                        </footer>
+                    </form>
+                    <div data-settings-panel="memory" class="hidden">
+                        <section class="swarm-modal__section">
+                            <div class="swarm-tabs">
+                                <button type="button" class="swarm-tab" data-memory-tab="lasting">Постоянная <span>0</span></button>
+                                <button type="button" class="swarm-tab" data-memory-tab="today">Сегодня <span>0</span></button>
+                            </div>
+                            <p id="swarm-memory-hint" class="swarm-settings__hint"></p>
+                            <ul id="swarm-memory" class="swarm-memory"></ul>
+                            <ul id="swarm-today" class="swarm-memory hidden"></ul>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </div>`;
 }
 
 // --- Events ---
 
 function setSwarmAgents(agents) {
     swarmState.agents = Object.fromEntries(agents.map(agent => [agent.agent_id, agent]));
-    renderSwarmRoster();
+    renderSwarmCrew();
+    renderSwarmAgentList();
 }
 
 function handleSwarmEvent(event) {
     if (event.type === 'history') {
+        swarmState.models = event.models || [];
         setSwarmAgents(event.agents);
         swarmState.messages = event.messages;
         swarmState.typing.clear();
@@ -322,12 +567,14 @@ function handleSwarmEvent(event) {
         if (event.active) swarmState.typing.add(event.agent_id);
         else swarmState.typing.delete(event.agent_id);
         renderSwarmTyping();
+        // Plan steps show a spinner while their agent works.
+        if (swarmState.messages.some(m => m.kind === 'task')) renderSwarmFeed();
     } else if (event.type === 'agents') {
         setSwarmAgents(event.agents);
     } else if (event.type === 'control') {
         swarmState.control = event;
         renderSwarmControls();
-        renderSwarmSettings();
+        renderSwarmSettings(false);
         renderSwarmMemory();
     } else if (event.type === 'error') {
         console.warn('Swarm error:', event.message);
@@ -370,6 +617,7 @@ function updateSwarmSuggestions() {
     const groupOptions = Object.entries(swarmGroups()).map(([group, members]) => ({
         agent_id: group,
         color: SWARM_GROUP_COLOR,
+        icon: 'users',
         description: `группа: ${members.map(m => '@' + m.agent_id).join(', ')}`,
     }));
     const options = match
@@ -378,9 +626,10 @@ function updateSwarmSuggestions() {
         : [];
     box.innerHTML = options.map(agent => `
         <button type="button" class="swarm-suggestion" data-agent-id="${agent.agent_id}" style="--agent-color:${agent.color}">
-            @${agent.agent_id} <span>${swarmEscape(agent.description)}</span>
+            <i data-lucide="${agent.icon}" class="w-3.5 h-3.5"></i> @${agent.agent_id} <span>${swarmEscape(agent.description)}</span>
         </button>`).join('');
     box.classList.toggle('hidden', options.length === 0);
+    swarmIcons(box);
 }
 
 function insertSwarmMention(agentId) {
@@ -392,65 +641,63 @@ function insertSwarmMention(agentId) {
     updateSwarmSuggestions();
 }
 
+function bindSwarmModal() {
+    const modal = document.getElementById('swarm-modal');
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal || e.target.closest('[data-close-settings]')) closeSwarmSettings();
+        const tab = e.target.closest('[data-settings-tab]');
+        if (tab) showSwarmSettingsTab(tab.dataset.settingsTab);
+        const memoryTab = e.target.closest('[data-memory-tab]');
+        if (memoryTab) showSwarmMemoryTab(memoryTab.dataset.memoryTab);
+        const forget = e.target.closest('[data-fact-id]');
+        if (forget) swarmSend({ type: 'forget', fact_id: forget.dataset.factId });
+        const reset = e.target.closest('[data-reset-model]');
+        if (reset) swarmSend({ type: 'set_agent_model', agent_id: reset.dataset.resetModel, model: null });
+    });
+    modal.addEventListener('change', (e) => {
+        const toggle = e.target.closest('[data-toggle-agent]');
+        if (toggle) swarmSend({ type: 'toggle_agent', agent_id: toggle.dataset.toggleAgent, enabled: toggle.checked });
+        const select = e.target.closest('[data-model-agent]');
+        if (select) {
+            swarmSend({ type: 'set_agent_model', agent_id: select.dataset.modelAgent, model: select.value });
+            select.blur();
+        }
+    });
+    document.getElementById('swarm-settings-form').addEventListener('submit', saveSwarmSettings);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeSwarmSettings();
+    });
+}
+
 function initSwarmChat() {
     const root = document.getElementById('swarm-root');
     if (!root) return;
     root.innerHTML = `
-        <div class="swarm__header">
+        <header class="swarm__header">
             <div class="swarm__top">
-                <div class="swarm__title"><i data-lucide="messages-square" class="w-5 h-5"></i> Рой агентов
-                    <span id="swarm-status" class="swarm__status"></span></div>
+                <div class="swarm__title">
+                    <i data-lucide="messages-square" class="w-5 h-5"></i>
+                    <span>Рой агентов</span>
+                    <span id="swarm-status" class="swarm__status hidden"></span>
+                </div>
                 <div class="swarm__controls">
-                    <button type="button" class="swarm-mode" data-swarm-mode="running" title="Проверки и чат">
-                        <i data-lucide="play" class="w-4 h-4"></i><span>Play</span></button>
-                    <button type="button" class="swarm-mode" data-swarm-mode="paused" title="Без проверок, чат работает">
-                        <i data-lucide="pause" class="w-4 h-4"></i><span>Pause</span></button>
-                    <button type="button" class="swarm-mode swarm-mode--stop" data-swarm-mode="stopped" title="Выключить рой и очистить чат">
-                        <i data-lucide="square" class="w-4 h-4"></i><span>Stop</span></button>
-                    <button type="button" id="swarm-settings-toggle" class="swarm-mode" title="Настройки и память">
-                        <i data-lucide="settings-2" class="w-4 h-4"></i></button>
+                    <div class="swarm-segmented" role="group" aria-label="Режим роя">
+                        <button type="button" class="swarm-mode" data-swarm-mode="running" title="Проверки и чат">
+                            <i data-lucide="play" class="w-4 h-4"></i><span>Play</span></button>
+                        <button type="button" class="swarm-mode" data-swarm-mode="paused" title="Без проверок, чат работает">
+                            <i data-lucide="pause" class="w-4 h-4"></i><span>Pause</span></button>
+                        <button type="button" class="swarm-mode swarm-mode--stop" data-swarm-mode="stopped" title="Выключить рой и очистить чат">
+                            <i data-lucide="square" class="w-4 h-4"></i><span>Stop</span></button>
+                    </div>
+                    <button type="button" class="swarm-icon-button" data-open-settings title="Настройки роя">
+                        <i data-lucide="settings-2" class="w-5 h-5"></i></button>
                 </div>
             </div>
-            <div id="swarm-schedule" class="swarm__schedule"></div>
-            <div id="swarm-settings" class="swarm-settings hidden">
-                <form id="swarm-settings-form" class="swarm-settings__form">
-                    <fieldset class="swarm-settings__group">
-                        <legend>Проверки</legend>
-                        <label>Пауза, мин <span class="swarm-settings__pair">
-                            <input name="interval_min_minutes" type="number" min="1" max="60" required> –
-                            <input name="interval_max_minutes" type="number" min="1" max="60" required></span></label>
-                        <label>Работают <span class="swarm-settings__pair">
-                            <input name="active_from" type="text" class="swarm-settings__time" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" inputmode="numeric" placeholder="ЧЧ:ММ" required> –
-                            <input name="active_until" type="text" class="swarm-settings__time" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" inputmode="numeric" placeholder="ЧЧ:ММ" required></span></label>
-                        <div class="swarm-settings__tasks">${Object.entries(SWARM_TASKS).map(([task, name]) => `
-                            <label class="swarm-settings__check"><input type="checkbox" name="tasks" value="${task}"> ${name}</label>`).join('')}
-                        </div>
-                        <label>Команды <input name="football_teams" type="text" placeholder="пусто — команды из футбольного скилла"></label>
-                    </fieldset>
-                    <fieldset class="swarm-settings__group">
-                        <legend>Голос</legend>
-                        <label>Будни с <input name="voice_from_weekday" type="text" class="swarm-settings__time" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" inputmode="numeric" placeholder="ЧЧ:ММ" required></label>
-                        <label>Выходные с <input name="voice_from_weekend" type="text" class="swarm-settings__time" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" inputmode="numeric" placeholder="ЧЧ:ММ" required></label>
-                        <label>До <input name="voice_until" type="text" class="swarm-settings__time" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" inputmode="numeric" placeholder="ЧЧ:ММ" required></label>
-                    </fieldset>
-                    <fieldset class="swarm-settings__group swarm-settings__group--memory">
-                        <legend>Память</legend>
-                        <div class="swarm-tabs">
-                            <button type="button" class="swarm-tab" data-memory-tab="lasting">Постоянная <span>0</span></button>
-                            <button type="button" class="swarm-tab" data-memory-tab="today">Сегодня <span>0</span></button>
-                        </div>
-                        <div id="swarm-memory-hint" class="swarm-settings__hint"></div>
-                        <ul id="swarm-memory" class="swarm-memory"></ul>
-                        <ul id="swarm-today" class="swarm-memory hidden"></ul>
-                    </fieldset>
-                    <div class="swarm-settings__footer">
-                        <span id="swarm-settings-error" class="swarm-settings__error"></span>
-                        <button type="submit" class="swarm-settings__save">Сохранить</button>
-                    </div>
-                </form>
+            <div class="swarm__sub">
+                <div id="swarm-crew" class="swarm-crew"></div>
+                <div id="swarm-schedule" class="swarm__schedule"></div>
             </div>
-            <div id="swarm-roster" class="swarm__roster"></div>
-        </div>
+        </header>
         <div id="swarm-feed" class="swarm__feed"></div>
         <div id="swarm-typing" class="swarm__typing"></div>
         <form id="swarm-form" class="swarm__form">
@@ -459,29 +706,19 @@ function initSwarmChat() {
                    placeholder="Напиши рою… @ — упомянуть агента">
             <button type="submit" class="swarm__send" title="Отправить"><i data-lucide="send" class="w-5 h-5"></i></button>
         </form>`;
-    lucide.createIcons({ nodes: [root] });
+    // The modal lives in <body>: no parent clips or blurs it.
+    document.body.insertAdjacentHTML('beforeend', swarmModalHtml());
+    swarmIcons(root);
+    swarmIcons(document.getElementById('swarm-modal'));
 
     document.querySelectorAll('[data-swarm-mode]').forEach(button => {
         button.addEventListener('click', () => setSwarmMode(button.dataset.swarmMode));
     });
-    document.getElementById('swarm-settings-toggle').addEventListener('click', () => {
-        document.getElementById('swarm-settings').classList.toggle('hidden');
-        renderSwarmSettings();
+    root.querySelector('.swarm__header').addEventListener('click', (e) => {
+        const open = e.target.closest('[data-open-settings]');
+        if (open) openSwarmSettings(open.dataset.openSettings);
     });
-    document.getElementById('swarm-settings-form').addEventListener('submit', saveSwarmSettings);
-    document.querySelectorAll('[data-memory-tab]').forEach(button => {
-        button.addEventListener('click', () => showSwarmMemoryTab(button.dataset.memoryTab));
-    });
-    document.getElementById('swarm-memory').addEventListener('click', (e) => {
-        const button = e.target.closest('[data-fact-id]');
-        if (button) swarmSend({ type: 'forget', fact_id: button.dataset.factId });
-    });
-    document.getElementById('swarm-roster').addEventListener('click', (e) => {
-        const button = e.target.closest('[data-agent-id]');
-        if (!button) return;
-        const agent = swarmState.agents[button.dataset.agentId];
-        swarmSend({ type: 'toggle_agent', agent_id: agent.agent_id, enabled: !agent.enabled });
-    });
+    bindSwarmModal();
     document.getElementById('swarm-feed').addEventListener('click', (e) => {
         const check = e.target.closest('.swarm-msg--check');
         if (check) check.classList.toggle('swarm-msg--open');
@@ -524,6 +761,7 @@ function showSwarmView() {
 function hideSwarmView() {
     const view = document.getElementById('swarm-view');
     if (view) view.classList.add('hidden');
+    closeSwarmSettings();
     swarmState.active = false;
     disconnectSwarm();
 }
