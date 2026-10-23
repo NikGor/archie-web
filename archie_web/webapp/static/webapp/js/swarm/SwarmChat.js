@@ -38,9 +38,15 @@ function swarmGroups() {
     return groups;
 }
 
+// Chat paths ("/c/<id>/") and web links become links (alert chats, ARCHIE-247).
+const SWARM_LINK_PATTERN = /(https?:\/\/[^\s<]+|\/c\/[0-9a-f-]{36}\/)/gi;
+
 function swarmFormatText(text) {
     const groups = swarmGroups();
-    return swarmEscape(text).replace(/@([a-z][a-z0-9_]*)/gi, (match, id) => {
+    return swarmEscape(text).replace(SWARM_LINK_PATTERN, url => {
+        const label = url.startsWith('/c/') ? 'открыть чат' : url;
+        return `<a class="swarm-link" href="${url}">${label}</a>`;
+    }).replace(/@([a-z][a-z0-9_]*)/gi, (match, id) => {
         const key = id.toLowerCase();
         const color = swarmState.agents[key] ? swarmState.agents[key].color
             : groups[key] ? SWARM_GROUP_COLOR : null;
