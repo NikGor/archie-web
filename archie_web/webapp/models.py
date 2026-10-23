@@ -13,6 +13,7 @@ class UserProfile(models.Model):
         ("flirty", "Flirty"),
         ("futurebot", "Futurebot"),
         ("butler", "Butler"),
+        ("marcus", "Marcus"),
     ]
 
     LANGUAGE_CHOICES = [
