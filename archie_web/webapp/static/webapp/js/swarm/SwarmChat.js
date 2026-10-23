@@ -398,7 +398,7 @@ function initSwarmChat() {
                         <div class="swarm-settings__tasks">${Object.entries(SWARM_TASKS).map(([task, name]) => `
                             <label class="swarm-settings__check"><input type="checkbox" name="tasks" value="${task}"> ${name}</label>`).join('')}
                         </div>
-                        <label>Команды <input name="football_teams" type="text" placeholder="Bayern München, Schalke 04"></label>
+                        <label>Команды <input name="football_teams" type="text" placeholder="пусто — команды из футбольного скилла"></label>
                     </fieldset>
                     <fieldset class="swarm-settings__group">
                         <legend>Голос</legend>
