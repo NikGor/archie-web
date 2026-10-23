@@ -104,9 +104,9 @@ def list_conversations(request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         services.list_conversations(
             grade=request.GET.get("grade") or None,
-            unreviewed=request.GET.get("unreviewed") == "1",
             page=max(int(request.GET.get("page", 1)), 1),
             reason=request.GET.get("reason") or None,
+            handling=request.GET.get("handling") or None,
         )
     )
 
@@ -120,10 +120,23 @@ def get_conversation(request: HttpRequest, conversation_id: str) -> JsonResponse
 
 @api_view
 @require_POST
-def review_conversation(request: HttpRequest, conversation_id: str) -> JsonResponse:
+def set_conversation_handling(
+    request: HttpRequest, conversation_id: str
+) -> JsonResponse:
+    """{"status": "in_progress" | "fixed" | "none", "jira_key": "ARCHIE-…"} — from the
+    UI or from the prompt-fix skills (service token)."""
     conversation = get_object_or_404(Conversation, conversation_id=conversation_id)
-    updated = services.mark_reviewed(conversation, request.eval_actor)
-    return JsonResponse({"reviewed": updated})
+    try:
+        payload = parse_json(request)
+        handling = services.set_handling(
+            conversation,
+            str(payload.get("status", "")),
+            str(payload.get("jira_key") or "").strip().upper(),
+            request.eval_actor,
+        )
+    except (ValueError, json.JSONDecodeError) as error:
+        return JsonResponse({"error": str(error)}, status=422)
+    return JsonResponse({"handling": handling})
 
 
 @api_view

@@ -23,9 +23,9 @@ urlpatterns = [
         name="chat_monitoring_conversation",
     ),
     path(
-        "api/conversations/<str:conversation_id>/review/",
-        views.review_conversation,
-        name="chat_monitoring_review",
+        "api/conversations/<str:conversation_id>/handling/",
+        views.set_conversation_handling,
+        name="chat_monitoring_handling",
     ),
     path("api/runs/start/", views.start_run, name="chat_monitoring_start"),
     path("api/runs/active/", views.get_active_run, name="chat_monitoring_active"),

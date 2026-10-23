@@ -13,7 +13,12 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from archie_web.ai_assistant.models import Conversation, Message
-from archie_web.chat_monitoring.models import MonitorRun, TurnEvaluation
+from archie_web.chat_monitoring.models import (
+    HANDLING_STATUSES,
+    ConversationHandling,
+    MonitorRun,
+    TurnEvaluation,
+)
 from archie_web.prompt_evals.services import call_agent
 
 logger = logging.getLogger(__name__)
@@ -141,8 +146,6 @@ def store_evaluation(evaluation: MonitorTurnEvaluation) -> TurnEvaluation:
             "judge_model": evaluation.judge_model,
             "judge_cost": evaluation.judge_cost,
             "evaluated_at": datetime.fromisoformat(evaluation.evaluated_at),
-            "reviewed_at": None,
-            "reviewed_by": "",
         },
     )
     return stored
@@ -191,11 +194,6 @@ def _graded_conversations() -> QuerySet[Conversation]:
         red=Count("evaluations", filter=Q(evaluations__grade="red")),
         orange=Count("evaluations", filter=Q(evaluations__grade="orange")),
         green=Count("evaluations", filter=Q(evaluations__grade="green")),
-        unreviewed=Count(
-            "evaluations",
-            filter=Q(evaluations__reviewed_at__isnull=True)
-            & ~Q(evaluations__grade="green"),
-        ),
         last_evaluated_at=Max("evaluations__evaluated_at"),
     ).filter(last_evaluated_at__isnull=False)
 
@@ -218,6 +216,12 @@ def get_summary() -> dict:
         "reason_labels": reason_labels(list(reasons)),
         "pending_turns": pending.count(),
         "pending_conversations": pending.values("conversation_id").distinct().count(),
+        "handling": {
+            row["status"]: row["total"]
+            for row in ConversationHandling.objects.values("status").annotate(
+                total=Count("pk")
+            )
+        },
         "runs": [run_to_dict(run) for run in MonitorRun.objects.all()[:5]],
     }
 
@@ -279,9 +283,6 @@ def _listed_conversations() -> QuerySet[Conversation]:
             red=_count_by_conversation(evaluations.filter(grade="red")),
             orange=_count_by_conversation(evaluations.filter(grade="orange")),
             green=_count_by_conversation(evaluations.filter(grade="green")),
-            unreviewed=_count_by_conversation(
-                evaluations.filter(reviewed_at__isnull=True).exclude(grade="green")
-            ),
             pending=_count_by_conversation(pending_messages()),
             last_message_at=Subquery(
                 Message.objects.filter(conversation_id=OuterRef("conversation_id"))
@@ -303,7 +304,10 @@ def conversation_grade(red: int, orange: int, green: int) -> str:
 
 
 def list_conversations(
-    grade: str | None, unreviewed: bool, page: int, reason: str | None = None
+    grade: str | None,
+    page: int,
+    reason: str | None = None,
+    handling: str | None = None,
 ) -> dict:
     """All conversations, newest activity first, one page at a time."""
     queryset = _listed_conversations()
@@ -321,13 +325,17 @@ def list_conversations(
         queryset = queryset.filter(red=0, orange=0, green__gt=0)
     elif grade == "pending":
         queryset = queryset.filter(pending__gt=0)
-    if unreviewed:
-        queryset = queryset.filter(unreviewed__gt=0)
+    if handling == "none":
+        queryset = queryset.filter(handling__isnull=True)
+    elif handling in HANDLING_STATUSES:
+        queryset = queryset.filter(handling__status=handling)
     total = queryset.count()
     pages = max(1, -(-total // CONVERSATION_PAGE_SIZE))
     page = min(page, pages)
     start = (page - 1) * CONVERSATION_PAGE_SIZE
-    rows = queryset.order_by("-last_message_at")[start : start + CONVERSATION_PAGE_SIZE]
+    rows = queryset.select_related("handling").order_by("-last_message_at")[
+        start : start + CONVERSATION_PAGE_SIZE
+    ]
     items = [
         {
             "conversation_id": conversation.conversation_id,
@@ -341,7 +349,7 @@ def list_conversations(
             "orange": conversation.orange,
             "green": conversation.green,
             "pending": conversation.pending,
-            "unreviewed": conversation.unreviewed,
+            "handling": handling_to_dict(conversation),
             "last_evaluated_at": (
                 conversation.last_evaluated_at.isoformat()
                 if conversation.last_evaluated_at
@@ -367,10 +375,6 @@ def evaluation_to_dict(evaluation: TurnEvaluation) -> dict:
         "judge_model": evaluation.judge_model,
         "judge_cost": evaluation.judge_cost,
         "evaluated_at": evaluation.evaluated_at.isoformat(),
-        "reviewed_at": (
-            evaluation.reviewed_at.isoformat() if evaluation.reviewed_at else None
-        ),
-        "reviewed_by": evaluation.reviewed_by,
     }
 
 
@@ -380,6 +384,7 @@ def get_conversation_detail(conversation: Conversation) -> dict:
         "conversation_id": conversation.conversation_id,
         "title": conversation.title,
         "created_at": conversation.created_at.isoformat(),
+        "handling": handling_to_dict(conversation),
         "messages": [
             {
                 "message_id": message.message_id,
@@ -457,10 +462,35 @@ def rule_stats(since: datetime) -> dict:
     return {"since": since.isoformat(), "turns": evaluations.count(), "rules": rules}
 
 
-def mark_reviewed(conversation: Conversation, actor: str) -> int:
-    """Mark all red and orange turns of a conversation as reviewed."""
-    return (
-        conversation.evaluations.filter(reviewed_at__isnull=True)
-        .exclude(grade="green")
-        .update(reviewed_at=timezone.now(), reviewed_by=actor)
+def handling_to_dict(conversation: Conversation) -> dict | None:
+    handling = getattr(conversation, "handling", None)
+    if handling is None:
+        return None
+    return {
+        "status": handling.status,
+        "jira_key": handling.jira_key,
+        "updated_at": handling.updated_at.isoformat(),
+        "updated_by": handling.updated_by,
+    }
+
+
+def set_handling(
+    conversation: Conversation, status: str, jira_key: str, actor: str
+) -> dict | None:
+    """status 'none' clears the mark; a missing jira_key keeps the stored one."""
+    if status == "none":
+        ConversationHandling.objects.filter(conversation=conversation).delete()
+        return None
+    if status not in HANDLING_STATUSES:
+        raise ValueError(f"unknown handling status {status!r}")
+    current = ConversationHandling.objects.filter(conversation=conversation).first()
+    handling, _ = ConversationHandling.objects.update_or_create(
+        conversation=conversation,
+        defaults={
+            "status": status,
+            "jira_key": jira_key or (current.jira_key if current else ""),
+            "updated_by": actor,
+        },
     )
+    conversation.handling = handling
+    return handling_to_dict(conversation)

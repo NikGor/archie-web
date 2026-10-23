@@ -81,8 +81,6 @@ class TurnEvaluation(models.Model):
     judge_model = models.CharField(max_length=128)
     judge_cost = models.FloatField(null=True, blank=True)
     evaluated_at = models.DateTimeField(db_index=True)
-    reviewed_at = models.DateTimeField(null=True, blank=True)
-    reviewed_by = models.CharField(max_length=150, blank=True, default="")
 
     class Meta:
         ordering = ["-evaluated_at"]
@@ -90,3 +88,30 @@ class TurnEvaluation(models.Model):
 
     def __str__(self) -> str:
         return f"{self.message_id}: {self.grade}"
+
+
+HANDLING_STATUSES = ["in_progress", "fixed"]
+
+
+class ConversationHandling(models.Model):
+    """What was done about a conversation's bad turns (ARCHIE-213): taken into work
+    or fixed, usually under a JIRA ticket. No row = not handled yet."""
+
+    conversation = models.OneToOneField(
+        Conversation,
+        on_delete=models.CASCADE,
+        to_field="conversation_id",
+        primary_key=True,
+        related_name="handling",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=[(status, status) for status in HANDLING_STATUSES],
+        db_index=True,
+    )
+    jira_key = models.CharField(max_length=32, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.CharField(max_length=150, blank=True, default="")
+
+    def __str__(self) -> str:
+        return f"{self.conversation_id}: {self.status} {self.jira_key}"

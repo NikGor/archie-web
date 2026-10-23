@@ -9,7 +9,11 @@ from django.utils import timezone
 
 from archie_web.ai_assistant.models import Conversation, Message
 from archie_web.chat_monitoring import services
-from archie_web.chat_monitoring.models import MonitorRun, TurnEvaluation
+from archie_web.chat_monitoring.models import (
+    ConversationHandling,
+    MonitorRun,
+    TurnEvaluation,
+)
 from archie_web.prompt_evals import views as eval_views
 
 TOKEN = "test-token"
@@ -266,7 +270,7 @@ class UiApiTest(TestCase):
         red = self.client.get(url, {"grade": "red"}).json()["conversations"]
         everything = self.client.get(url).json()["conversations"]
         self.assertEqual([c["conversation_id"] for c in red], ["red"])
-        self.assertEqual(red[0]["unreviewed"], 1)
+        self.assertIsNone(red[0]["handling"])
         self.assertEqual(
             {c["conversation_id"] for c in everything}, {"red", "green", "pending"}
         )
@@ -299,14 +303,42 @@ class UiApiTest(TestCase):
         self.assertEqual(last["conversations"][-1]["conversation_id"], "bulk24")
         self.assertEqual(beyond["page"], 2)
 
-    def test_review_marks_only_problem_turns(self):
-        url = reverse("chat_monitoring_review", args=["red"])
-        response = self.client.post(url)
-        self.assertEqual(response.json(), {"reviewed": 1})
-        unreviewed = self.client.get(
-            reverse("chat_monitoring_conversations"), {"unreviewed": "1"}
-        ).json()["conversations"]
-        self.assertEqual(unreviewed, [])
+    def test_handling_marks_conversation_and_filters(self):
+        url = reverse("chat_monitoring_handling", args=["red"])
+        listing = reverse("chat_monitoring_conversations")
+
+        taken = self.post_json(url, {"status": "in_progress", "jira_key": "archie-217"})
+        fixed = self.post_json(url, {"status": "fixed"})
+        in_work = self.client.get(listing, {"handling": "in_progress"}).json()
+        done = self.client.get(listing, {"handling": "fixed"}).json()["conversations"]
+        open_ = self.client.get(listing, {"handling": "none"}).json()["conversations"]
+        detail = self.client.get(reverse("chat_monitoring_conversation", args=["red"])).json()
+        summary = self.client.get(reverse("chat_monitoring_summary")).json()
+
+        self.assertEqual(taken.json()["handling"]["jira_key"], "ARCHIE-217")
+        self.assertEqual(taken.json()["handling"]["updated_by"], "niko")
+        # A status change without a ticket keeps the stored ticket
+        self.assertEqual(fixed.json()["handling"]["status"], "fixed")
+        self.assertEqual(fixed.json()["handling"]["jira_key"], "ARCHIE-217")
+        self.assertEqual(in_work["conversations"], [])
+        self.assertEqual([c["conversation_id"] for c in done], ["red"])
+        self.assertNotIn("red", [c["conversation_id"] for c in open_])
+        self.assertEqual(detail["handling"]["status"], "fixed")
+        self.assertEqual(summary["handling"], {"fixed": 1})
+
+    def test_handling_none_clears_and_bad_status_is_422(self):
+        url = reverse("chat_monitoring_handling", args=["red"])
+        self.post_json(url, {"status": "in_progress"})
+
+        cleared = self.post_json(url, {"status": "none"})
+        bad = self.post_json(url, {"status": "reviewed"})
+
+        self.assertIsNone(cleared.json()["handling"])
+        self.assertEqual(bad.status_code, 422)
+        self.assertFalse(ConversationHandling.objects.exists())
+
+    def post_json(self, url: str, payload: dict):
+        return self.client.post(url, data=json.dumps(payload), content_type="application/json")
 
     def test_conversation_detail_has_text_and_evaluations(self):
         detail = self.client.get(reverse("chat_monitoring_conversation", args=["red"])).json()
