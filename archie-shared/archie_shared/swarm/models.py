@@ -4,7 +4,7 @@ from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
-SWARM_TEXT_MAX_LENGTH = 280
+SWARM_TEXT_MAX_LENGTH = 600
 SWARM_MEMORY_FACT_MAX_LENGTH = 200
 _CLOCK_PATTERN = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
 
