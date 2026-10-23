@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "archie-shared"
-version = "0.1.92"
+version = "0.1.93"
 description = "Shared Pydantic models and utilities for Archie ecosystem"
 authors = ["NikGor <nicolas.gordienko@example.com>"]
 readme = "README.md"
