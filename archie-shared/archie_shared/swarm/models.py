@@ -17,6 +17,7 @@ SwarmMessageKind = Literal[
     "system",
     "opinion",  # council member position during a discussion; wakes nobody
     "decision",  # the single council answer to the user; may delegate via @mentions
+    "check",  # a spontaneous check that found nothing new; agents do not read it
 ]
 SwarmAgentRole = Literal["state", "action"]
 # running: periodic checks and chat; paused: chat only; stopped: swarm off, chat cleared
