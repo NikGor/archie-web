@@ -702,7 +702,7 @@ function initSwarmChat() {
         <div id="swarm-typing" class="swarm__typing"></div>
         <form id="swarm-form" class="swarm__form">
             <div id="swarm-suggestions" class="swarm__suggestions hidden"></div>
-            <input id="swarm-input" class="swarm__input" maxlength="280" autocomplete="off"
+            <input id="swarm-input" class="swarm__input" maxlength="600" autocomplete="off"
                    placeholder="Напиши рою… @ — упомянуть агента">
             <button type="submit" class="swarm__send" title="Отправить"><i data-lucide="send" class="w-5 h-5"></i></button>
         </form>`;
