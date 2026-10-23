@@ -18,6 +18,7 @@ SwarmMessageKind = Literal[
     "opinion",  # council member position during a discussion; wakes nobody
     "decision",  # the single council answer to the user; may delegate via @mentions
     "check",  # a spontaneous check that found nothing new; agents do not read it
+    "task",  # one step of the consul's plan for one agent; the next step may wait for its reply
 ]
 SwarmAgentRole = Literal["state", "action"]
 # running: periodic checks and chat; paused: chat only; stopped: swarm off, chat cleared
@@ -93,6 +94,9 @@ class SwarmMessage(BaseModel):
     importance: Optional[SwarmImportance] = Field(
         default=None, description="Importance of a spontaneous alert"
     )
+    round: Optional[int] = Field(
+        default=None, description="Discussion round of an opinion, starting at 1"
+    )
     usage: Optional[SwarmUsage] = Field(
         default=None, description="LLM usage for this message"
     )
@@ -113,6 +117,16 @@ class SwarmAgentInfo(BaseModel):
     groups: List[str] = Field(
         default_factory=list,
         description="Groups the agent belongs to; '@group' mentions wake all members",
+    )
+    model: Optional[str] = Field(
+        default=None, description="LLM model the agent uses now"
+    )
+    default_model: Optional[str] = Field(
+        default=None, description="LLM model of the agent when the user sets none"
+    )
+    chair: bool = Field(
+        default=False,
+        description="True for the consul: leads the discussion and gives tasks to agents",
     )
 
 
@@ -190,6 +204,9 @@ class SwarmHistoryEvent(BaseModel):
     type: Literal["history"] = Field("history", description="Event type")
     messages: List[SwarmMessage] = Field(description="Recent messages, oldest first")
     agents: List[SwarmAgentInfo] = Field(description="Agent roster")
+    models: List[str] = Field(
+        default_factory=list, description="LLM models the user can choose for an agent"
+    )
 
 
 class SwarmMessageEvent(BaseModel):
@@ -264,6 +281,18 @@ class SwarmToggleAgentCommand(BaseModel):
     enabled: bool = Field(description="New enabled state")
 
 
+class SwarmAgentModelCommand(BaseModel):
+    """User chooses the LLM model of an agent"""
+
+    type: Literal["set_agent_model"] = Field(
+        "set_agent_model", description="Command type"
+    )
+    agent_id: str = Field(description="Agent ID")
+    model: Optional[str] = Field(
+        default=None, description="Model name; empty returns to the default model"
+    )
+
+
 class SwarmProposalDecisionCommand(BaseModel):
     """User approves or rejects a proposal"""
 
@@ -297,6 +326,7 @@ class SwarmForgetCommand(BaseModel):
 SwarmClientCommand = Union[
     SwarmUserMessageCommand,
     SwarmToggleAgentCommand,
+    SwarmAgentModelCommand,
     SwarmProposalDecisionCommand,
     SwarmModeCommand,
     SwarmSettingsCommand,
