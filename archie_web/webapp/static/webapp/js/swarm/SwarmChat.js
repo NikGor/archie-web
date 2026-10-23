@@ -7,7 +7,7 @@ const SWARM_RECONNECT_MS = 3000;
 const SWARM_MAX_MESSAGES = 200;
 const SWARM_GROUP_COLOR = '#adb5bd';
 const SWARM_STOP_CONFIRM_MS = 3000;
-const SWARM_TASKS = { home: 'Дом', mail: 'Почта', calendar: 'Календарь', football: 'Футбол' };
+const SWARM_TASKS = { home: 'Дом', mail: 'Почта', calendar: 'Календарь', football: 'Футбол', weather: 'Погода' };
 const SWARM_IMPORTANCE = { low: 'к сведению', normal: 'на табло', high: 'важно · голос' };
 const SWARM_OUTCOMES = { silent: 'ничего нового', reported: 'есть новости', failed: 'ошибка' };
 
@@ -227,6 +227,11 @@ function renderSwarmMemory() {
             </li>`).join('')
         : '<li class="swarm-fact swarm-fact--empty">Пусто. Скажи рою «запомни…» — например, «не говори про влажность».</li>';
     lucide.createIcons({ nodes: [list] });
+    // What the swarm chose to keep for today (ARCHIE-246); cleared at midnight.
+    const today = swarmState.control ? swarmState.control.today : [];
+    document.getElementById('swarm-today').innerHTML = today.length
+        ? today.map(fact => `<li class="swarm-fact"><span>${swarmEscape(fact)}</span></li>`).join('')
+        : '<li class="swarm-fact swarm-fact--empty">Рой ещё ничего не отложил на сегодня.</li>';
 }
 
 function readSwarmSettings(form) {
@@ -409,6 +414,8 @@ function initSwarmChat() {
                     <fieldset class="swarm-settings__group swarm-settings__group--memory">
                         <legend>Память</legend>
                         <ul id="swarm-memory" class="swarm-memory"></ul>
+                        <div class="swarm-settings__sub">Сегодня — до полуночи</div>
+                        <ul id="swarm-today" class="swarm-memory"></ul>
                     </fieldset>
                     <div class="swarm-settings__footer">
                         <span id="swarm-settings-error" class="swarm-settings__error"></span>
