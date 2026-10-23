@@ -20,6 +20,7 @@ const swarmState = {
     typing: new Set(),
     control: null,
     stopArmedUntil: 0,
+    memoryTab: 'lasting',
 };
 
 function swarmEscape(text) {
@@ -232,6 +233,21 @@ function renderSwarmMemory() {
     document.getElementById('swarm-today').innerHTML = today.length
         ? today.map(fact => `<li class="swarm-fact"><span>${swarmEscape(fact)}</span></li>`).join('')
         : '<li class="swarm-fact swarm-fact--empty">Рой ещё ничего не отложил на сегодня.</li>';
+    document.querySelector('[data-memory-tab="lasting"] span').textContent = facts.length;
+    document.querySelector('[data-memory-tab="today"] span').textContent = today.length;
+    showSwarmMemoryTab(swarmState.memoryTab);
+}
+
+function showSwarmMemoryTab(tab) {
+    swarmState.memoryTab = tab;
+    document.querySelectorAll('[data-memory-tab]').forEach(button => {
+        button.classList.toggle('swarm-tab--active', button.dataset.memoryTab === tab);
+    });
+    document.getElementById('swarm-memory').classList.toggle('hidden', tab !== 'lasting');
+    document.getElementById('swarm-today').classList.toggle('hidden', tab !== 'today');
+    document.getElementById('swarm-memory-hint').textContent = tab === 'today'
+        ? 'Рой сам решает, что отложить на день, и очищает это в полночь.'
+        : 'Попадает в каждый промпт роя. Скажи «запомни…», чтобы добавить.';
 }
 
 function readSwarmSettings(form) {
@@ -413,9 +429,13 @@ function initSwarmChat() {
                     </fieldset>
                     <fieldset class="swarm-settings__group swarm-settings__group--memory">
                         <legend>Память</legend>
+                        <div class="swarm-tabs">
+                            <button type="button" class="swarm-tab" data-memory-tab="lasting">Постоянная <span>0</span></button>
+                            <button type="button" class="swarm-tab" data-memory-tab="today">Сегодня <span>0</span></button>
+                        </div>
+                        <div id="swarm-memory-hint" class="swarm-settings__hint"></div>
                         <ul id="swarm-memory" class="swarm-memory"></ul>
-                        <div class="swarm-settings__sub">Сегодня — до полуночи</div>
-                        <ul id="swarm-today" class="swarm-memory"></ul>
+                        <ul id="swarm-today" class="swarm-memory hidden"></ul>
                     </fieldset>
                     <div class="swarm-settings__footer">
                         <span id="swarm-settings-error" class="swarm-settings__error"></span>
@@ -443,6 +463,9 @@ function initSwarmChat() {
         renderSwarmSettings();
     });
     document.getElementById('swarm-settings-form').addEventListener('submit', saveSwarmSettings);
+    document.querySelectorAll('[data-memory-tab]').forEach(button => {
+        button.addEventListener('click', () => showSwarmMemoryTab(button.dataset.memoryTab));
+    });
     document.getElementById('swarm-memory').addEventListener('click', (e) => {
         const button = e.target.closest('[data-fact-id]');
         if (button) swarmSend({ type: 'forget', fact_id: button.dataset.factId });
