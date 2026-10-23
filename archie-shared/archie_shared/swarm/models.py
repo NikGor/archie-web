@@ -22,7 +22,7 @@ SwarmMessageKind = Literal[
 SwarmAgentRole = Literal["state", "action"]
 # running: periodic checks and chat; paused: chat only; stopped: swarm off, chat cleared
 SwarmMode = Literal["running", "paused", "stopped"]
-SwarmWatchTask = Literal["home", "mail", "calendar", "football"]
+SwarmWatchTask = Literal["home", "mail", "calendar", "football", "weather"]
 # low: chat only; normal: LED display; high: LED display and voice
 SwarmImportance = Literal["low", "normal", "high"]
 
@@ -147,7 +147,7 @@ class SwarmSettings(BaseModel):
         default="23:30", pattern=_CLOCK_PATTERN, description="Voice alerts end"
     )
     tasks: List[SwarmWatchTask] = Field(
-        default_factory=lambda: ["home", "mail", "calendar", "football"],
+        default_factory=lambda: ["home", "mail", "calendar", "football", "weather"],
         description="Enabled checks; one check runs per wake-up",
     )
     football_teams: List[str] = Field(
@@ -228,6 +228,10 @@ class SwarmControlEvent(BaseModel):
     )
     memory: List[SwarmMemoryFact] = Field(
         default_factory=list, description="Long-term memory facts"
+    )
+    today: List[str] = Field(
+        default_factory=list,
+        description="Facts the swarm chose to keep for today; cleared at midnight",
     )
 
 
