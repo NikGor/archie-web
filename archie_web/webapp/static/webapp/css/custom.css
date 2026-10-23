@@ -1378,6 +1378,7 @@ body.voice-mode .orb {
 .swarm-chip--error { color: rgb(252, 165, 165); }
 .swarm-chip--blocked { color: rgb(253, 186, 116); }
 .swarm-mention { color: var(--agent-color); font-weight: 600; }
+.swarm-link { color: inherit; text-decoration: underline; font-weight: 600; }
 .swarm__typing { flex-shrink: 0; min-height: 1.25rem; font-size: 0.75rem; color: rgba(255, 255, 255, 0.5); }
 .swarm__form { position: relative; flex-shrink: 0; display: flex; gap: 0.5rem; }
 .swarm__input {
