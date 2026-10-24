@@ -58,6 +58,7 @@ const CM_RULE_GRADE_ORDER = { red: 0, orange: 1, green: 2 };
 const CM_LABEL_CHARS = 70;
 const CM_PAGE_WINDOW = 2;
 const CM_TEXT_PREVIEW = 600;
+const CM_COPIED_MS = 1500;
 
 const cmState = {
     active: false,
@@ -165,6 +166,46 @@ async function cmSetHandling(conversationId, status, rule = '', messageId = '') 
     } catch (error) {
         cmSetError(error);
     }
+}
+
+// Chat page of a conversation: the deep link /c/<id>/ (webapp/urls.py) opens it in the chat view
+function cmChatPath(conversationId) {
+    return `/c/${encodeURIComponent(conversationId)}/`;
+}
+
+// navigator.clipboard needs a secure context; the Pi serves the app over plain http
+async function cmCopyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    if (!copied) throw new Error('Не удалось скопировать ссылку на чат');
+}
+
+async function cmCopyChatLink(button) {
+    try {
+        await cmCopyText(`${window.location.origin}${cmChatPath(button.dataset.cmCopy)}`);
+    } catch (error) {
+        cmSetError(error);
+        return;
+    }
+    const { innerHTML, title } = button;
+    button.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i>';
+    button.title = 'Ссылка скопирована';
+    lucide.createIcons({ nodes: [button] });
+    setTimeout(() => {
+        button.innerHTML = innerHTML;
+        button.title = title;
+    }, CM_COPIED_MS);
 }
 
 function cmJiraLink(key) {
@@ -468,6 +509,11 @@ function cmRenderConversation(conversation) {
         ? `<button class="pe-btn pe-btn--small cm-conv__judge" data-cm-judge="${peEscape(id)}" ${running ? 'disabled' : ''}
               title="Оценить ${pePlural(conversation.pending, CM_TURN_FORMS)} этой беседы"><i data-lucide="play" class="w-4 h-4"></i> Оценить</button>`
         : '';
+    const links = `
+        <a class="cm-icon-btn" href="${cmChatPath(id)}" target="_blank" rel="noopener" title="Открыть чат">
+            <i data-lucide="external-link" class="w-4 h-4"></i></a>
+        <button class="cm-icon-btn" data-cm-copy="${peEscape(id)}" title="Скопировать ссылку на чат">
+            <i data-lucide="link" class="w-4 h-4"></i></button>`;
     let body = '';
     if (isOpen) {
         body = detail
@@ -487,6 +533,7 @@ function cmRenderConversation(conversation) {
                     <i data-lucide="${isOpen ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i>
                 </button>
                 ${judge}
+                ${links}
             </div>
             ${body}
         </div>`;
@@ -551,7 +598,9 @@ function cmHandleClick(event) {
             cmRender();
             document.querySelector('#monitoring-root .pe__body').scrollTop = 0;
         }).catch(cmSetError);
-    } else if (target.dataset.cmJudge) cmStartRun(target.dataset.cmJudge); else if (target.dataset.cmReason) {
+    } else if (target.dataset.cmJudge) cmStartRun(target.dataset.cmJudge);
+    else if (target.dataset.cmCopy) cmCopyChatLink(target);
+    else if (target.dataset.cmReason) {
         const reason = target.dataset.cmReason;
         cmState.filter.reason = cmState.filter.reason === reason ? '' : reason;
         cmLoadConversations().then(cmRender).catch(cmSetError);
