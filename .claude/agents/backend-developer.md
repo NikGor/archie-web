@@ -29,7 +29,6 @@ Follow `agent_docs/code_style.md` and `agent_docs/logging.md`.
 ## Environment variables
 
 ```
-BACKEND_API_URL   # http://archie-backend:8002
 AI_AGENT_URL      # http://archie-ai-agent:8005
 DATABASE_URL      # sqlite:///db.sqlite3 or Postgres
 ```

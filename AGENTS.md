@@ -28,7 +28,6 @@ SECRET_KEY
 DEBUG
 DATABASE_URL          # sqlite:///db.sqlite3 or Postgres
 OPENWEATHER_API_KEY
-BACKEND_API_URL       # http://archie-backend:8002
 AI_AGENT_URL          # http://archie-ai-agent:8005
 HOMEASSISTANT_MCP_URL    # http://homeassistant.local:8123/api/mcp
 HOMEASSISTANT_MCP_TOKEN  # HA long-lived access token
