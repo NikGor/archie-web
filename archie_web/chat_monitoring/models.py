@@ -91,11 +91,52 @@ class TurnEvaluation(models.Model):
 
 
 HANDLING_STATUSES = ["in_progress", "fixed"]
+# Conversation summary: "none" = at least one broken rule is not handled yet
+CONVERSATION_HANDLING_STATUSES = ["none", *HANDLING_STATUSES]
+
+
+class RuleHandling(models.Model):
+    """What was done about one broken rule of one judged turn (ARCHIE-251): taken
+    into work or fixed, usually under a JIRA ticket. No row = not handled yet.
+    rule_key is 'spec:rule_id', or 'criteria:<criterion>' for older evaluations."""
+
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        to_field="message_id",
+        related_name="rule_handlings",
+    )
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        to_field="conversation_id",
+        related_name="rule_handlings",
+    )
+    rule_key = models.CharField(max_length=200, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=[(status, status) for status in HANDLING_STATUSES],
+        db_index=True,
+    )
+    jira_key = models.CharField(max_length=32, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.CharField(max_length=150, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["message", "rule_key"], name="unique_rule_handling"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.message_id} {self.rule_key}: {self.status} {self.jira_key}"
 
 
 class ConversationHandling(models.Model):
-    """What was done about a conversation's bad turns (ARCHIE-213): taken into work
-    or fixed, usually under a JIRA ticket. No row = not handled yet."""
+    """Summary of the rule marks of a conversation, kept by
+    services.refresh_conversation_handling for the list filters (ARCHIE-251).
+    No row = no broken rule of the conversation is marked."""
 
     conversation = models.OneToOneField(
         Conversation,
@@ -106,12 +147,15 @@ class ConversationHandling(models.Model):
     )
     status = models.CharField(
         max_length=16,
-        choices=[(status, status) for status in HANDLING_STATUSES],
+        choices=[(status, status) for status in CONVERSATION_HANDLING_STATUSES],
         db_index=True,
     )
-    jira_key = models.CharField(max_length=32, blank=True, default="")
+    open_rules = models.PositiveIntegerField(default=0)
+    in_progress_rules = models.PositiveIntegerField(default=0)
+    fixed_rules = models.PositiveIntegerField(default=0)
+    jira_keys = models.JSONField(default=list)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.CharField(max_length=150, blank=True, default="")
 
     def __str__(self) -> str:
-        return f"{self.conversation_id}: {self.status} {self.jira_key}"
+        return f"{self.conversation_id}: {self.status} {','.join(self.jira_keys)}"

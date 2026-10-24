@@ -17,6 +17,7 @@ from archie_web.chat_monitoring.models import (
     HANDLING_STATUSES,
     ConversationHandling,
     MonitorRun,
+    RuleHandling,
     TurnEvaluation,
 )
 from archie_web.prompt_evals.services import call_agent
@@ -24,6 +25,7 @@ from archie_web.prompt_evals.services import call_agent
 logger = logging.getLogger(__name__)
 
 GRADE_ORDER = ["red", "orange", "green"]
+BAD_GRADES = ("red", "orange")
 # A running run the agent has not updated for this long is treated as lost
 # (agent restart or crash); it no longer blocks the UI.
 STALE_RUN_AFTER = timedelta(minutes=10)
@@ -148,6 +150,7 @@ def store_evaluation(evaluation: MonitorTurnEvaluation) -> TurnEvaluation:
             "evaluated_at": datetime.fromisoformat(evaluation.evaluated_at),
         },
     )
+    refresh_conversation_handling(message.conversation_id)
     return stored
 
 
@@ -218,9 +221,9 @@ def get_summary() -> dict:
         "pending_conversations": pending.values("conversation_id").distinct().count(),
         "handling": {
             row["status"]: row["total"]
-            for row in ConversationHandling.objects.values("status").annotate(
-                total=Count("pk")
-            )
+            for row in ConversationHandling.objects.exclude(status="none")
+            .values("status")
+            .annotate(total=Count("pk"))
         },
         "runs": [run_to_dict(run) for run in MonitorRun.objects.all()[:5]],
     }
@@ -326,7 +329,9 @@ def list_conversations(
     elif grade == "pending":
         queryset = queryset.filter(pending__gt=0)
     if handling == "none":
-        queryset = queryset.filter(handling__isnull=True)
+        queryset = queryset.filter(
+            Q(handling__isnull=True) | Q(handling__status="none")
+        )
     elif handling in HANDLING_STATUSES:
         queryset = queryset.filter(handling__status=handling)
     total = queryset.count()
@@ -380,6 +385,9 @@ def evaluation_to_dict(evaluation: TurnEvaluation) -> dict:
 
 def get_conversation_detail(conversation: Conversation) -> dict:
     messages = conversation.messages.select_related("evaluation").order_by("created_at")
+    marks: dict[str, dict] = {}
+    for mark in conversation.rule_handlings.all():
+        marks.setdefault(mark.message_id, {})[mark.rule_key] = mark_to_dict(mark)
     return {
         "conversation_id": conversation.conversation_id,
         "title": conversation.title,
@@ -397,6 +405,8 @@ def get_conversation_detail(conversation: Conversation) -> dict:
                     if hasattr(message, "evaluation")
                     else None
                 ),
+                # Rule key -> mark of the turn's broken rules (ARCHIE-251)
+                "rule_handling": marks.get(message.message_id, {}),
             }
             for message in messages
         ],
@@ -416,6 +426,10 @@ def rule_stats(since: datetime) -> dict:
         .select_related("message")
         .order_by("-message__created_at")
     )
+    marks = {
+        (mark.message_id, mark.rule_key): mark
+        for mark in RuleHandling.objects.filter(message__created_at__gte=since)
+    }
     for evaluation in evaluations:
         for rule in evaluation.rules:
             key = f"{rule['spec']}:{rule['rule_id']}"
@@ -430,6 +444,9 @@ def rule_stats(since: datetime) -> dict:
                     "orange": 0,
                     "green": 0,
                     "not_applicable": 0,
+                    # Broken turns by mark: none = nobody took them yet (ARCHIE-251)
+                    "handling": {"none": 0, "in_progress": 0, "fixed": 0},
+                    "jira_keys": [],
                     "versions": {},
                     "examples": [],
                 },
@@ -438,10 +455,19 @@ def rule_stats(since: datetime) -> dict:
             entry[grade] += 1
             version = evaluation.spec_versions.get(rule["spec"], "")
             by_version = entry["versions"].setdefault(
-                version, {"red": 0, "orange": 0, "green": 0, "not_applicable": 0}
+                version,
+                {"red": 0, "orange": 0, "green": 0, "not_applicable": 0, "open": 0},
             )
             by_version[grade] += 1
-            if grade in ("red", "orange") and len(entry["examples"]) < RULE_EXAMPLES:
+            if grade not in BAD_GRADES:
+                continue
+            mark = marks.get((evaluation.message_id, key))
+            entry["handling"][mark.status if mark else "none"] += 1
+            if mark and mark.jira_key and mark.jira_key not in entry["jira_keys"]:
+                entry["jira_keys"].append(mark.jira_key)
+            # open = broken and not fixed yet
+            by_version["open"] += 0 if mark and mark.status == "fixed" else 1
+            if len(entry["examples"]) < RULE_EXAMPLES:
                 entry["examples"].append(
                     {
                         "message_id": evaluation.message_id,
@@ -452,6 +478,7 @@ def rule_stats(since: datetime) -> dict:
                         "model": evaluation.message.model,
                         "trace_id": evaluation.trace_id or None,
                         "created_at": evaluation.message.created_at.isoformat(),
+                        "handling": mark_to_dict(mark) if mark else None,
                     }
                 )
     rules = sorted(
@@ -468,29 +495,181 @@ def handling_to_dict(conversation: Conversation) -> dict | None:
         return None
     return {
         "status": handling.status,
-        "jira_key": handling.jira_key,
+        "open_rules": handling.open_rules,
+        "in_progress_rules": handling.in_progress_rules,
+        "fixed_rules": handling.fixed_rules,
+        "jira_keys": handling.jira_keys,
         "updated_at": handling.updated_at.isoformat(),
         "updated_by": handling.updated_by,
     }
 
 
-def set_handling(
-    conversation: Conversation, status: str, jira_key: str, actor: str
-) -> dict | None:
-    """status 'none' clears the mark; a missing jira_key keeps the stored one."""
-    if status == "none":
-        ConversationHandling.objects.filter(conversation=conversation).delete()
-        return None
-    if status not in HANDLING_STATUSES:
-        raise ValueError(f"unknown handling status {status!r}")
-    current = ConversationHandling.objects.filter(conversation=conversation).first()
-    handling, _ = ConversationHandling.objects.update_or_create(
-        conversation=conversation,
+def mark_to_dict(mark: RuleHandling) -> dict:
+    return {
+        "status": mark.status,
+        "jira_key": mark.jira_key,
+        "updated_at": mark.updated_at.isoformat(),
+        "updated_by": mark.updated_by,
+    }
+
+
+def broken_rule_keys(evaluation: TurnEvaluation) -> list[str]:
+    """Keys of the turn's red / orange rules: 'spec:rule_id', and
+    'criteria:<criterion>' for older evaluations that graded generic criteria."""
+    keys = [
+        f"{rule['spec']}:{rule['rule_id']}"
+        for rule in evaluation.rules
+        if rule.get("grade") in BAD_GRADES
+    ] + [
+        f"criteria:{item['criterion']}"
+        for item in evaluation.criteria
+        if item.get("grade") in BAD_GRADES
+    ]
+    return list(dict.fromkeys(keys))
+
+
+def conversation_problems(conversation_id: str) -> list[tuple[str, str]]:
+    """(message_id, rule key) of every broken rule in the conversation's judged turns."""
+    evaluations = TurnEvaluation.objects.filter(
+        conversation_id=conversation_id
+    ).only("message_id", "rules", "criteria")
+    return [
+        (evaluation.message_id, key)
+        for evaluation in evaluations
+        for key in broken_rule_keys(evaluation)
+    ]
+
+
+def refresh_conversation_handling(conversation_id: str) -> None:
+    """Recount the conversation summary from its rule marks. Status: none while a
+    broken rule has no mark, in_progress while one is in work, else fixed."""
+    marks = {
+        (mark.message_id, mark.rule_key): mark
+        for mark in RuleHandling.objects.filter(conversation_id=conversation_id)
+    }
+    problems = conversation_problems(conversation_id)
+    marked = [marks[problem] for problem in problems if problem in marks]
+    if not marked:
+        ConversationHandling.objects.filter(conversation_id=conversation_id).delete()
+        return
+    counts = Counter(mark.status for mark in marked)
+    open_rules = len(problems) - len(marked)
+    status = "none" if open_rules else "in_progress" if counts["in_progress"] else "fixed"
+    ConversationHandling.objects.update_or_create(
+        conversation_id=conversation_id,
         defaults={
+            "status": status,
+            "open_rules": open_rules,
+            "in_progress_rules": counts["in_progress"],
+            "fixed_rules": counts["fixed"],
+            "jira_keys": sorted({mark.jira_key for mark in marked if mark.jira_key}),
+            "updated_by": max(marked, key=lambda mark: mark.updated_at).updated_by,
+        },
+    )
+
+
+def check_handling_status(status: str) -> None:
+    if status != "none" and status not in HANDLING_STATUSES:
+        raise ValueError(f"unknown handling status {status!r}")
+
+
+def mark_rule(
+    conversation_id: str,
+    problem: tuple[str, str],
+    status: str,
+    jira_key: str,
+    actor: str,
+) -> None:
+    """status 'none' removes the mark; a missing jira_key keeps the stored one."""
+    message_id, rule_key = problem
+    current = RuleHandling.objects.filter(message_id=message_id, rule_key=rule_key).first()
+    if status == "none":
+        if current:
+            current.delete()
+        return
+    RuleHandling.objects.update_or_create(
+        message_id=message_id,
+        rule_key=rule_key,
+        defaults={
+            "conversation_id": conversation_id,
             "status": status,
             "jira_key": jira_key or (current.jira_key if current else ""),
             "updated_by": actor,
         },
     )
-    conversation.handling = handling
-    return handling_to_dict(conversation)
+
+
+def set_handling(
+    conversation: Conversation,
+    status: str,
+    jira_key: str,
+    actor: str,
+    rule_key: str = "",
+    message_id: str = "",
+) -> int:
+    """Mark the conversation's broken rules: all of them, or only `rule_key` and /
+    or the turn `message_id` (UI buttons, prompt-fix agents). Returns the number
+    of broken rules the call changed."""
+    check_handling_status(status)
+    problems = [
+        (problem_message, problem_rule)
+        for problem_message, problem_rule in conversation_problems(
+            conversation.conversation_id
+        )
+        if (not rule_key or problem_rule == rule_key)
+        and (not message_id or problem_message == message_id)
+    ]
+    for problem in problems:
+        mark_rule(conversation.conversation_id, problem, status, jira_key, actor)
+    refresh_conversation_handling(conversation.conversation_id)
+    return len(problems)
+
+
+def set_rule_handling(
+    rule_key: str,
+    status: str,
+    jira_key: str,
+    actor: str,
+    before: datetime,
+) -> dict:
+    """Mark every broken turn of `rule_key` created before `before` (prompt-autofix:
+    in_progress when a ticket takes the rule, fixed after its fix is deployed).
+    Turns fixed under another ticket keep their mark; 'none' removes only the
+    marks of `jira_key`."""
+    check_handling_status(status)
+    evaluations = TurnEvaluation.objects.filter(message__created_at__lt=before)
+    evaluations = (
+        evaluations.exclude(criteria=[])
+        if rule_key.startswith("criteria:")
+        else evaluations.filter(reasons__contains=f",{rule_key},")
+    )
+    marks = {
+        mark.message_id: mark
+        for mark in RuleHandling.objects.filter(
+            rule_key=rule_key, message__created_at__lt=before
+        )
+    }
+    changed: Counter[str] = Counter()
+    for evaluation in evaluations.only("message_id", "conversation_id", "rules", "criteria"):
+        if rule_key not in broken_rule_keys(evaluation):
+            continue
+        mark = marks.get(evaluation.message_id)
+        if status == "none" and (not mark or mark.jira_key != jira_key):
+            continue
+        if mark and mark.status == "fixed" and mark.jira_key != jira_key:
+            continue
+        mark_rule(
+            evaluation.conversation_id,
+            (evaluation.message_id, rule_key),
+            status,
+            jira_key,
+            actor,
+        )
+        changed[evaluation.conversation_id] += 1
+    for conversation_id in changed:
+        refresh_conversation_handling(conversation_id)
+    return {
+        "rule": rule_key,
+        "marked": sum(changed.values()),
+        "conversations": len(changed),
+    }

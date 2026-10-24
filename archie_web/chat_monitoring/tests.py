@@ -12,6 +12,7 @@ from archie_web.chat_monitoring import services
 from archie_web.chat_monitoring.models import (
     ConversationHandling,
     MonitorRun,
+    RuleHandling,
     TurnEvaluation,
 )
 from archie_web.prompt_evals import views as eval_views
@@ -257,7 +258,12 @@ class UiApiTest(TestCase):
 
         ui_map = next(r for r in week["rules"] if r["rule_id"] == "ui_map")
         self.assertEqual((ui_map["red"], ui_map["applicable"]), (1, 1))
-        self.assertEqual(ui_map["versions"], {"v1": {"red": 1, "orange": 0, "green": 0, "not_applicable": 0}})
+        self.assertEqual(
+            ui_map["versions"],
+            {"v1": {"red": 1, "orange": 0, "green": 0, "not_applicable": 0, "open": 1}},
+        )
+        self.assertEqual(ui_map["handling"], {"none": 1, "in_progress": 0, "fixed": 0})
+        self.assertIsNone(ui_map["examples"][0]["handling"])
         self.assertEqual(ui_map["examples"][0]["message_id"], "pending-a0")
         self.assertIn("model", ui_map["examples"][0])
         tables = next(r for r in week["rules"] if r["rule_id"] == "ui_tables")
@@ -315,11 +321,16 @@ class UiApiTest(TestCase):
         detail = self.client.get(reverse("chat_monitoring_conversation", args=["red"])).json()
         summary = self.client.get(reverse("chat_monitoring_summary")).json()
 
-        self.assertEqual(taken.json()["handling"]["jira_key"], "ARCHIE-217")
+        # The conversation has one broken turn: red-a1 with a red helpfulness criterion
+        self.assertEqual(taken.json()["marked"], 1)
+        self.assertEqual(taken.json()["handling"]["jira_keys"], ["ARCHIE-217"])
         self.assertEqual(taken.json()["handling"]["updated_by"], "niko")
         # A status change without a ticket keeps the stored ticket
         self.assertEqual(fixed.json()["handling"]["status"], "fixed")
-        self.assertEqual(fixed.json()["handling"]["jira_key"], "ARCHIE-217")
+        self.assertEqual(fixed.json()["handling"]["jira_keys"], ["ARCHIE-217"])
+        self.assertEqual(
+            detail["messages"][3]["rule_handling"]["criteria:helpfulness"]["status"], "fixed"
+        )
         self.assertEqual(in_work["conversations"], [])
         self.assertEqual([c["conversation_id"] for c in done], ["red"])
         self.assertNotIn("red", [c["conversation_id"] for c in open_])
@@ -336,6 +347,89 @@ class UiApiTest(TestCase):
         self.assertIsNone(cleared.json()["handling"])
         self.assertEqual(bad.status_code, 422)
         self.assertFalse(ConversationHandling.objects.exists())
+        self.assertFalse(RuleHandling.objects.exists())
+
+    def store_rules(self, message_id: str, grades: dict[str, str]) -> None:
+        """Judge a turn by spec rules: {"spec:rule_id": grade}."""
+        payload = make_evaluation(message_id, "red")
+        payload["criteria"] = []
+        payload["rules"] = [
+            {"spec": key.split(":")[0], "rule_id": key.split(":")[1], "text": key, "grade": grade}
+            for key, grade in grades.items()
+        ]
+        services.store_evaluation(services.MonitorTurnEvaluation.model_validate(payload))
+
+    def test_handling_of_one_rule_keeps_the_conversation_open(self):
+        self.store_rules(
+            "pending-a0", {"format_ui_answer:ui_map": "red", "outcome:solves_request": "orange", "format_ui_answer:ui_tables": "green"}
+        )
+        url = reverse("chat_monitoring_handling", args=["pending"])
+        listing = reverse("chat_monitoring_conversations")
+
+        one = self.post_json(url, {"status": "fixed", "rule": "format_ui_answer:ui_map", "jira_key": "ARCHIE-300"})
+        open_ = [c["conversation_id"] for c in self.client.get(listing, {"handling": "none"}).json()["conversations"]]
+        fixed = self.client.get(listing, {"handling": "fixed"}).json()["conversations"]
+        other = self.post_json(url, {"status": "in_progress", "rule": "outcome:solves_request", "jira_key": "ARCHIE-301"})
+        in_work = self.client.get(listing, {"handling": "in_progress"}).json()["conversations"]
+        detail = self.client.get(reverse("chat_monitoring_conversation", args=["pending"])).json()
+
+        self.assertEqual(one.json()["marked"], 1)
+        self.assertEqual(
+            {key: one.json()["handling"][key] for key in ("status", "open_rules", "fixed_rules", "jira_keys")},
+            {"status": "none", "open_rules": 1, "fixed_rules": 1, "jira_keys": ["ARCHIE-300"]},
+        )
+        self.assertIn("pending", open_)
+        self.assertEqual(fixed, [])
+        self.assertEqual(other.json()["handling"]["status"], "in_progress")
+        self.assertEqual(other.json()["handling"]["jira_keys"], ["ARCHIE-300", "ARCHIE-301"])
+        self.assertEqual([c["conversation_id"] for c in in_work], ["pending"])
+        marks = detail["messages"][1]["rule_handling"]
+        self.assertEqual(set(marks), {"format_ui_answer:ui_map", "outcome:solves_request"})
+        self.assertEqual(marks["format_ui_answer:ui_map"]["jira_key"], "ARCHIE-300")
+
+    def test_new_broken_turn_reopens_a_fixed_conversation(self):
+        url = reverse("chat_monitoring_handling", args=["red"])
+        self.post_json(url, {"status": "fixed", "jira_key": "ARCHIE-217"})
+
+        self.store_rules("red-a0", {"format_plain:plain_straightforward": "orange"})
+
+        handling = ConversationHandling.objects.get(conversation_id="red")
+        self.assertEqual((handling.status, handling.open_rules, handling.fixed_rules), ("none", 1, 1))
+
+    def test_rule_handling_marks_turns_before_a_time_and_keeps_other_tickets(self):
+        rule = "format_ui_answer:ui_map"
+        make_conversation("older", turns=1, start_minutes_ago=90)
+        make_conversation("newer", turns=1, start_minutes_ago=10)
+        for message_id in ("older-a0", "pending-a0", "newer-a0"):
+            self.store_rules(message_id, {rule: "red", "outcome:solves_request": "green"})
+        self.post_json(
+            reverse("chat_monitoring_handling", args=["older"]),
+            {"status": "fixed", "rule": rule, "jira_key": "ARCHIE-260"},
+        )
+        url = reverse("chat_monitoring_rule_handling")
+        before = (timezone.now() - timedelta(minutes=30)).isoformat()
+
+        taken = self.post_json(url, {"rule": rule, "status": "in_progress", "jira_key": "ARCHIE-300", "before": before})
+        shipped = self.post_json(url, {"rule": rule, "status": "fixed", "jira_key": "archie-300", "before": before})
+        stats = next(
+            r for r in self.client.get(reverse("chat_monitoring_rules")).json()["rules"] if r["key"] == rule
+        )
+        marks = dict(RuleHandling.objects.values_list("message_id", "jira_key"))
+        cleared = self.post_json(url, {"rule": rule, "status": "none", "jira_key": "ARCHIE-300"})
+        bad = self.post_json(url, {"rule": "ui_map", "status": "fixed"})
+
+        # older-a0 stays fixed under ARCHIE-260; newer-a0 came after `before`
+        self.assertEqual((taken.json()["marked"], taken.json()["conversations"]), (1, 1))
+        self.assertEqual(shipped.json()["marked"], 1)
+        self.assertEqual(marks, {"older-a0": "ARCHIE-260", "pending-a0": "ARCHIE-300"})
+        self.assertEqual(stats["handling"], {"none": 1, "in_progress": 0, "fixed": 2})
+        self.assertEqual(sorted(stats["jira_keys"]), ["ARCHIE-260", "ARCHIE-300"])
+        self.assertEqual(stats["examples"][0]["handling"], None)
+        self.assertEqual(cleared.json()["marked"], 1)
+        self.assertEqual(list(RuleHandling.objects.values_list("message_id", flat=True)), ["older-a0"])
+        self.assertEqual(ConversationHandling.objects.get(conversation_id="older").status, "fixed")
+        self.assertFalse(ConversationHandling.objects.filter(conversation_id="pending").exists())
+        self.assertEqual(bad.status_code, 422)
 
     def post_json(self, url: str, payload: dict):
         return self.client.post(url, data=json.dumps(payload), content_type="application/json")

@@ -123,20 +123,59 @@ def get_conversation(request: HttpRequest, conversation_id: str) -> JsonResponse
 def set_conversation_handling(
     request: HttpRequest, conversation_id: str
 ) -> JsonResponse:
-    """{"status": "in_progress" | "fixed" | "none", "jira_key": "ARCHIE-…"} — from the
-    UI or from the prompt-fix skills (service token)."""
+    """{"status": "in_progress" | "fixed" | "none", "jira_key": "ARCHIE-…",
+    "rule": "spec:rule_id"?, "message_id": "…"?} marks the conversation's broken
+    rules (all, or only that rule / turn) — from the UI or the prompt-fix agents."""
     conversation = get_object_or_404(Conversation, conversation_id=conversation_id)
     try:
         payload = parse_json(request)
-        handling = services.set_handling(
+        marked = services.set_handling(
             conversation,
             str(payload.get("status", "")),
             str(payload.get("jira_key") or "").strip().upper(),
             request.eval_actor,
+            rule_key=str(payload.get("rule") or ""),
+            message_id=str(payload.get("message_id") or ""),
         )
     except (ValueError, json.JSONDecodeError) as error:
         return JsonResponse({"error": str(error)}, status=422)
-    return JsonResponse({"handling": handling})
+    return JsonResponse(
+        {"handling": services.handling_to_dict(conversation), "marked": marked}
+    )
+
+
+@api_view
+@require_POST
+def set_rule_handling(request: HttpRequest) -> JsonResponse:
+    """{"rule": "spec:rule_id", "status": "in_progress" | "fixed" | "none",
+    "jira_key": "ARCHIE-…", "before": ISO datetime (default now)} marks every
+    broken turn of the rule created before `before` (prompt-autofix)."""
+    try:
+        payload = parse_json(request)
+        rule_key = str(payload.get("rule") or "")
+        if ":" not in rule_key:
+            raise ValueError("rule must be 'spec:rule_id'")
+        before = (
+            datetime.fromisoformat(payload["before"])
+            if payload.get("before")
+            else timezone.now()
+        )
+        if timezone.is_naive(before):
+            before = timezone.make_aware(before)
+        result = services.set_rule_handling(
+            rule_key,
+            str(payload.get("status", "")),
+            str(payload.get("jira_key") or "").strip().upper(),
+            request.eval_actor,
+            before,
+        )
+    except (ValueError, json.JSONDecodeError) as error:
+        return JsonResponse({"error": str(error)}, status=422)
+    logger.info(
+        f"chat_monitoring_002: Rule \033[34m{rule_key}\033[0m {payload['status']}: "
+        f"\033[33m{result['marked']}\033[0m turns by {request.eval_actor}"
+    )
+    return JsonResponse(result)
 
 
 @api_view

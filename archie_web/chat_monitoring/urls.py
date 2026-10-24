@@ -13,6 +13,11 @@ urlpatterns = [
     path("api/summary/", views.get_summary, name="chat_monitoring_summary"),
     path("api/rules/", views.get_rule_stats, name="chat_monitoring_rules"),
     path(
+        "api/rules/handling/",
+        views.set_rule_handling,
+        name="chat_monitoring_rule_handling",
+    ),
+    path(
         "api/conversations/",
         views.list_conversations,
         name="chat_monitoring_conversations",
