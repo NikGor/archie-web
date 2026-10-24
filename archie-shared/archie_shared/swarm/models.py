@@ -66,6 +66,11 @@ class SwarmMessage(BaseModel):
     """One message in the shared swarm chat"""
 
     message_id: str = Field(description="Unique message ID (Redis stream entry ID)")
+    run_id: Optional[str] = Field(
+        default=None,
+        description="ID of the swarm run: one trigger (check, user message, alert) "
+        "and every message it caused",
+    )
     created_at: str = Field(description="ISO 8601 UTC timestamp")
     sender: str = Field(
         description="Agent ID (e.g. 'light'), or 'user', 'system', 'ha'"
@@ -193,6 +198,12 @@ class SwarmRunInfo(BaseModel):
     outcome: Literal["silent", "reported", "failed"] = Field(
         description="silent: nothing new; reported: an alert was posted"
     )
+
+
+class SwarmJournalBatch(BaseModel):
+    """Swarm messages the agent sends to the Django swarm journal; stored once per message_id"""
+
+    messages: List[SwarmMessage] = Field(description="Posted messages, oldest first")
 
 
 # --- WebSocket events, server -> client ---
