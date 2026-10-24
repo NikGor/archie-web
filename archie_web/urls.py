@@ -31,4 +31,5 @@ urlpatterns = [
     path("spotify/", include("archie_web.spotify.urls")),
     path("prompt-evals/", include("archie_web.prompt_evals.urls")),
     path("chat-monitoring/", include("archie_web.chat_monitoring.urls")),
+    path("swarm-journal/", include("archie_web.swarm_journal.urls")),
 ]

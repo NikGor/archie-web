@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "archie_web.spotify",
     "archie_web.prompt_evals",
     "archie_web.chat_monitoring",
+    "archie_web.swarm_journal",
 ]
 
 MIDDLEWARE = [
