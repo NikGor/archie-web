@@ -47,7 +47,9 @@ const CM_REASON_LABELS = {
 };
 // The API judges at most 200 conversations per run, so 200 means «all pending»
 const CM_RUN_ALL = 200;
-const CM_HANDLING_LABELS = { in_progress: 'В работе', fixed: 'Исправлено' };
+// Marks live on broken rules (ARCHIE-251); a conversation is 'none' while one of them is unmarked
+const CM_HANDLING_LABELS = { in_progress: 'В работе', fixed: 'Исправлено', none: 'Частично' };
+const CM_HANDLING_ACTIONS = [['in_progress', 'wrench', 'В работу'], ['fixed', 'check-circle-2', 'Исправлено'], ['none', 'rotate-ccw', 'Снять отметку']];
 const CM_JIRA_URL = 'https://badich.atlassian.net/browse/';
 const CM_RUN_SIZES = [10, 20, 50, 100, CM_RUN_ALL];
 // Prompt specs a turn is judged against (agent app/monitoring/spec_rules.py)
@@ -148,16 +150,18 @@ async function cmToggleConversation(conversationId) {
     cmRender();
 }
 
-// Handling: what was done about a conversation's bad turns (ARCHIE-213)
-async function cmSetHandling(conversationId, status) {
+// Handling: what was done about broken rules (ARCHIE-213, per rule since ARCHIE-251).
+// No rule = every broken rule of the conversation; the ticket comes from the conversation's input.
+async function cmSetHandling(conversationId, status, rule = '', messageId = '') {
     const input = document.querySelector(`[data-cm-jira-for="${CSS.escape(conversationId)}"]`);
     const jiraKey = input ? input.value.trim() : '';
     try {
         await cmFetch(`/conversations/${encodeURIComponent(conversationId)}/handling/`, {
             method: 'POST',
-            body: JSON.stringify({ status, jira_key: jiraKey }),
+            body: JSON.stringify({ status, jira_key: jiraKey, rule, message_id: messageId }),
         });
         await cmRefresh();
+        await cmToggleConversation(conversationId);
     } catch (error) {
         cmSetError(error);
     }
@@ -169,26 +173,39 @@ function cmJiraLink(key) {
         : '';
 }
 
+// handling: conversation summary (status, *_rules counts, jira_keys) or one rule mark (status, jira_key)
 function cmHandlingBadge(handling, withKey = true) {
     if (!handling) return '';
-    const fixed = handling.status === 'fixed';
-    return `<span class="cm-handling cm-handling--${handling.status}" title="${peEscape(handling.updated_by || '')} · ${peFormatDate(handling.updated_at)}">
-        <i data-lucide="${fixed ? 'check-circle-2' : 'wrench'}" class="w-3 h-3"></i>
-        ${CM_HANDLING_LABELS[handling.status]}${withKey && handling.jira_key ? ` · ${peEscape(handling.jira_key)}` : ''}</span>`;
+    const keys = handling.jira_keys || (handling.jira_key ? [handling.jira_key] : []);
+    const counts = handling.jira_keys
+        ? `не обработано ${handling.open_rules} · в работе ${handling.in_progress_rules} · исправлено ${handling.fixed_rules} · `
+        : '';
+    return `<span class="cm-handling cm-handling--${handling.status}" title="${counts}${peEscape(handling.updated_by || '')} · ${peFormatDate(handling.updated_at)}">
+        <i data-lucide="${handling.status === 'fixed' ? 'check-circle-2' : 'wrench'}" class="w-3 h-3"></i>
+        ${CM_HANDLING_LABELS[handling.status]}${withKey && keys.length ? ` · ${peEscape(keys.join(', '))}` : ''}</span>`;
 }
 
 function cmRenderHandlingControls(conversationId, handling) {
-    const current = handling ? handling.status : 'none';
-    const buttons = [['in_progress', 'wrench', 'В работу'], ['fixed', 'check-circle-2', 'Исправлено'], ['none', 'rotate-ccw', 'Снять отметку']]
-        .filter(([status]) => status !== current)
-        .map(([status, icon, label]) => `<button class="pe-btn pe-btn--small" data-cm-handle="${status}" data-cm-handle-id="${peEscape(conversationId)}">
+    const buttons = CM_HANDLING_ACTIONS.map(([status, icon, label]) =>
+        `<button class="pe-btn pe-btn--small" data-cm-handle="${status}" data-cm-handle-id="${peEscape(conversationId)}">
             <i data-lucide="${icon}" class="w-4 h-4"></i> ${label}</button>`).join('');
+    const keys = handling ? handling.jira_keys : [];
     return `
         <div class="cm-handling-bar">
-            <span class="pe-muted">Обработка:</span> ${handling ? `${cmHandlingBadge(handling, false)} ${cmJiraLink(handling.jira_key)}` : '<span class="pe-muted">не обработано</span>'}
-            <input class="cm-jira-input" data-cm-jira-for="${peEscape(conversationId)}" placeholder="ARCHIE-…" value="${peEscape(handling ? handling.jira_key : '')}">
-            ${buttons}
+            <span class="pe-muted">Обработка:</span> ${handling ? `${cmHandlingBadge(handling, false)} ${keys.map(cmJiraLink).join(' ')}` : '<span class="pe-muted">не обработано</span>'}
+            <input class="cm-jira-input" data-cm-jira-for="${peEscape(conversationId)}" placeholder="ARCHIE-…" value="${peEscape(keys[0] || '')}">
+            <span class="pe-muted">все нарушения:</span> ${buttons}
         </div>`;
+}
+
+// Mark of one broken rule of a turn and icon buttons to change it
+function cmRenderRuleHandling(ruleKey, turn) {
+    const mark = turn.marks[ruleKey];
+    const buttons = CM_HANDLING_ACTIONS.filter(([status]) => status !== (mark ? mark.status : 'none'))
+        .map(([status, icon, label]) => `<button class="cm-icon-btn" title="${label}" data-cm-rule-handle="${status}"
+            data-cm-rule-key="${peEscape(ruleKey)}" data-cm-message="${peEscape(turn.messageId)}" data-cm-handle-id="${peEscape(turn.conversationId)}">
+            <i data-lucide="${icon}" class="w-3 h-3"></i></button>`).join('');
+    return `<span class="cm-rule__handling">${mark ? `${cmHandlingBadge(mark, false)} ${cmJiraLink(mark.jira_key)}` : ''}${buttons}</span>`;
 }
 
 // --- Runs ---
@@ -356,17 +373,21 @@ function cmEvaluationSummary(evaluation) {
     return reasons.length ? reasons.join(' · ') : CM_GRADE_LABELS[evaluation.grade];
 }
 
-function cmRenderRule(rule) {
+function cmRenderRule(rule, turn) {
+    const broken = rule.grade === 'red' || rule.grade === 'orange';
     return `
         <div class="cm-rule" title="${peEscape(rule.spec)}:${peEscape(rule.rule_id)}${rule.probability != null ? ` · p=${rule.probability}` : ''}">
             ${cmGradeDot(rule.grade)}
             <span class="cm-rule__text">${peEscape(cmShorten(rule.text, 220))}${rule.reason
-                ? ` <span class="cm-rule__reason">— ${peEscape(cmReasonLabel(rule.reason))}</span>` : ''}</span>
+                ? ` <span class="cm-rule__reason">— ${peEscape(cmReasonLabel(rule.reason))}</span>` : ''}
+                ${broken ? cmRenderRuleHandling(`${rule.spec}:${rule.rule_id}`, turn) : ''}</span>
         </div>`;
 }
 
-// Rules grouped by spec: broken first; followed / not applicable on demand
-function cmRenderRules(evaluation, messageId) {
+// Rules grouped by spec: broken first; followed / not applicable on demand.
+// turn: { conversationId, messageId, marks } for the rule marks
+function cmRenderRules(evaluation, turn) {
+    const messageId = turn.messageId;
     const rules = evaluation.rules || [];
     if (!rules.length) return '';
     const showAll = cmState.expandedRules.has(messageId);
@@ -377,7 +398,7 @@ function cmRenderRules(evaluation, messageId) {
         if (!shown.length) return '';
         const ordered = [...shown].sort((a, b) =>
             (CM_RULE_GRADE_ORDER[a.grade] ?? 3) - (CM_RULE_GRADE_ORDER[b.grade] ?? 3));
-        return `<div class="cm-rules__spec">${peEscape(cmSpecLabel(spec))}</div>${ordered.map(cmRenderRule).join('')}`;
+        return `<div class="cm-rules__spec">${peEscape(cmSpecLabel(spec))}</div>${ordered.map(rule => cmRenderRule(rule, turn)).join('')}`;
     }).join('');
     const followed = rules.filter(rule => rule.grade === 'green').length;
     const notApplicable = rules.filter(rule => !rule.grade).length;
@@ -389,13 +410,14 @@ function cmRenderRules(evaluation, messageId) {
         </div>`;
 }
 
-function cmRenderEvaluation(evaluation, messageId) {
+function cmRenderEvaluation(evaluation, turn) {
     const criteria = evaluation.criteria.map(item => `
         <div class="cm-criterion">
             ${cmGradeDot(item.grade)}
             <span class="cm-criterion__name">${CM_CRITERIA_LABELS[item.criterion] || peEscape(item.criterion)}</span>
             <span class="cm-criterion__comment">${item.grade === null ? '<span class="pe-muted">не применимо</span>'
-                : peEscape(item.reason ? cmReasonLabel(item.reason) : (item.comment || (item.grade === 'green' ? '' : '—')))}</span>
+                : peEscape(item.reason ? cmReasonLabel(item.reason) : (item.comment || (item.grade === 'green' ? '' : '—')))}
+                ${item.grade === 'red' || item.grade === 'orange' ? cmRenderRuleHandling(`criteria:${item.criterion}`, turn) : ''}</span>
         </div>`).join('');
     const skills = evaluation.skills_loaded.length
         ? `<div class="cm-eval__row"><span class="pe-muted">Скиллы:</span> ${evaluation.skills_loaded.map(name => `<span class="pe-chip">${peEscape(name)}</span>`).join(' ')}</div>`
@@ -405,7 +427,7 @@ function cmRenderEvaluation(evaluation, messageId) {
         <div class="cm-eval cm-eval--${evaluation.grade}">
             <div class="cm-eval__summary">${cmGradeDot(evaluation.grade)} ${peEscape(cmEvaluationSummary(evaluation))}</div>
             ${criteria ? `<div class="cm-criteria">${criteria}</div>` : ''}
-            ${cmRenderRules(evaluation, messageId)}
+            ${cmRenderRules(evaluation, turn)}
             <div class="cm-eval__row"><span class="pe-muted">Инструменты:</span> ${cmRenderToolCalls(evaluation)}</div>
             ${skills}
             <div class="pe-muted">${peEscape(evaluation.judge_model)} · ${peFormatDate(evaluation.evaluated_at)}${cost}
@@ -413,7 +435,7 @@ function cmRenderEvaluation(evaluation, messageId) {
         </div>`;
 }
 
-function cmRenderMessage(message) {
+function cmRenderMessage(message, conversationId) {
     const text = message.text || `[${message.content_format}]`;
     const expanded = cmState.expandedText.has(message.message_id);
     const shown = expanded || text.length <= CM_TEXT_PREVIEW ? text : `${text.slice(0, CM_TEXT_PREVIEW)}…`;
@@ -425,7 +447,9 @@ function cmRenderMessage(message) {
         <div class="cm-msg cm-msg--${message.role}">
             <div class="cm-msg__meta">${role} · ${peFormatDate(message.created_at)}</div>
             <div class="cm-msg__text">${peEscape(shown)}</div>${more}
-            ${message.evaluation ? cmRenderEvaluation(message.evaluation, message.message_id) : (message.role === 'assistant' ? '<div class="pe-muted">не оценено</div>' : '')}
+            ${message.evaluation
+                ? cmRenderEvaluation(message.evaluation, { conversationId, messageId: message.message_id, marks: message.rule_handling || {} })
+                : (message.role === 'assistant' ? '<div class="pe-muted">не оценено</div>' : '')}
         </div>`;
 }
 
@@ -447,7 +471,7 @@ function cmRenderConversation(conversation) {
     let body = '';
     if (isOpen) {
         body = detail
-            ? `<div class="cm-thread">${cmRenderHandlingControls(id, conversation.handling)}${detail.messages.map(cmRenderMessage).join('')}</div>`
+            ? `<div class="cm-thread">${cmRenderHandlingControls(id, conversation.handling)}${detail.messages.map(message => cmRenderMessage(message, id)).join('')}</div>`
             : '<div class="pe-muted cm-thread">Загрузка…</div>';
     }
     return `
@@ -537,6 +561,9 @@ function cmHandleClick(event) {
         cmLoadConversations().then(cmRender).catch(cmSetError);
     } else if (target.dataset.cmOpen) cmToggleConversation(target.dataset.cmOpen);
     else if (target.dataset.cmHandle) cmSetHandling(target.dataset.cmHandleId, target.dataset.cmHandle);
+    else if (target.dataset.cmRuleHandle) {
+        cmSetHandling(target.dataset.cmHandleId, target.dataset.cmRuleHandle, target.dataset.cmRuleKey, target.dataset.cmMessage);
+    }
     else if (target.dataset.cmHandling !== undefined) {
         const status = target.dataset.cmHandling;
         cmState.filter.handling = cmState.filter.handling === status ? '' : status;
