@@ -447,6 +447,9 @@ const IntegratedChatAssistant = () => {
                 conversation_id: currentConversation,
                 command_model: selectedCommandModel,
                 final_output_model: selectedFinalOutputModel,
+                // ARCHIE-289: null keeps the provider default
+                command_effort: window.selectedCommandEffort || null,
+                final_output_effort: window.selectedFinalOutputEffort || null,
                 previous_message_id: previousMessageId,
                 chat_history: chatHistory || null,
                 demo_mode: demoMode,
@@ -640,6 +643,9 @@ const IntegratedChatAssistant = () => {
                 conversation_id: currentConversation,
                 command_model: selectedCommandModel,
                 final_output_model: selectedFinalOutputModel,
+                // ARCHIE-289: null keeps the provider default
+                command_effort: window.selectedCommandEffort || null,
+                final_output_effort: window.selectedFinalOutputEffort || null,
                 previous_message_id: prevMessageId,
                 chat_history: chatHistoryForExecute || null,
                 demo_mode: demoMode,
