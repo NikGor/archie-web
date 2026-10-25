@@ -66,6 +66,35 @@ const FileGlyph = ({ className }) => React.createElement('svg', {
     React.createElement('path', { key: 'b', d: 'M14 3v5h5' })
 ]);
 
+// ARCHIE-289: reasoning effort per stage. 'auto' sends nothing and keeps the provider default.
+const EFFORT_LABELS = {
+    auto: 'Auto', none: 'Off', minimal: 'Min', low: 'Low',
+    medium: 'Med', high: 'High', xhigh: 'XHigh', max: 'Max'
+};
+const EFFORT_HINTS = {
+    none: 'No reasoning: fastest and cheapest',
+    minimal: 'Barely thinks: very fast',
+    low: 'Short thinking: fast',
+    medium: 'Balanced speed and depth',
+    high: 'Thinks deeper: slower',
+    xhigh: 'Very deep: much slower and pricier',
+    max: 'Maximum depth: slowest and most expensive'
+};
+const EFFORT_STORAGE_KEYS = { command: 'selectedCommandEffort', response: 'selectedFinalOutputEffort' };
+
+// The stored effort when the model supports it, otherwise 'auto'.
+// The choice stays stored, so it comes back when the user returns to such a model.
+const resolveEffort = (model, effort) =>
+    AI_MODEL_EFFORTS[model]?.levels.includes(effort) ? effort : 'auto';
+
+const GaugeGlyph = ({ className }) => React.createElement('svg', {
+    viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+    strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', className
+}, [
+    React.createElement('path', { key: 'a', d: 'M12 14l4-4' }),
+    React.createElement('path', { key: 'b', d: 'M3.34 19a10 10 0 1 1 17.32 0' })
+]);
+
 const ChatInput = ({
     value,
     onChange,
@@ -122,6 +151,19 @@ const ChatInput = ({
         return stored;
     });
     
+    const [efforts, setEfforts] = useState(() => ({
+        command: localStorage.getItem(EFFORT_STORAGE_KEYS.command) || 'auto',
+        response: localStorage.getItem(EFFORT_STORAGE_KEYS.response) || 'auto'
+    }));
+    const commandEffort = resolveEffort(selectedCommandModel, efforts.command);
+    const responseEffort = resolveEffort(selectedResponseModel, efforts.response);
+    const effortCustomized = commandEffort !== 'auto' || responseEffort !== 'auto';
+
+    useEffect(() => {
+        window.selectedCommandEffort = commandEffort === 'auto' ? null : commandEffort;
+        window.selectedFinalOutputEffort = responseEffort === 'auto' ? null : responseEffort;
+    }, [commandEffort, responseEffort]);
+
     // Speech-to-text (browser SpeechRecognition) — always Russian
     const SpeechRecognition = typeof window !== 'undefined'
         ? (window.SpeechRecognition || window.webkitSpeechRecognition)
@@ -370,6 +412,11 @@ const ChatInput = ({
         setSettingsSubmenu(null);
     }, []);
     
+    const handleEffortSelect = useCallback((stage, effort) => {
+        setEfforts(prev => ({ ...prev, [stage]: effort }));
+        localStorage.setItem(EFFORT_STORAGE_KEYS[stage], effort);
+    }, []);
+
     // Form submit handler
     const handleSubmit = useCallback((e) => {
         e.preventDefault();
@@ -436,7 +483,7 @@ const ChatInput = ({
     const currentFormatLabel = formats.find(f => f.value === selectedFormat)?.label || 'UI Answer';
     
     // Menu item component
-    const MenuItem = ({ icon, label, onClick, isActive, hasSubmenu, disabled: itemDisabled, title }) => {
+    const MenuItem = ({ icon, label, sublabel, trailing, onClick, isActive, hasSubmenu, disabled: itemDisabled, title }) => {
         return React.createElement('button', {
             type: 'button',
             disabled: itemDisabled,
@@ -455,10 +502,22 @@ const ChatInput = ({
                 'data-lucide': icon,
                 className: 'w-4 h-4'
             }),
-            React.createElement('span', {
-                key: 'label',
-                className: 'flex-1 text-left text-sm'
-            }, label),
+            sublabel
+                ? React.createElement('span', {
+                    key: 'label',
+                    className: 'flex-1 min-w-0 flex flex-col text-left'
+                }, [
+                    React.createElement('span', { key: 'main', className: 'text-sm' }, label),
+                    React.createElement('span', {
+                        key: 'sub',
+                        className: 'text-[11px] text-gray-500 truncate'
+                    }, sublabel)
+                ])
+                : React.createElement('span', {
+                    key: 'label',
+                    className: 'flex-1 text-left text-sm'
+                }, label),
+            trailing,
             hasSubmenu && React.createElement('i', {
                 key: 'chevron',
                 'data-lucide': 'chevron-right',
@@ -548,27 +607,129 @@ const ChatInput = ({
         ]);
     };
     
+    // Back button for submenus
+    const SettingsBackButton = () => {
+        return React.createElement('button', {
+            type: 'button',
+            className: 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/10 transition-colors border-t border-white/10 mt-2 pt-3',
+            onClick: () => setSettingsSubmenu(null)
+        }, [
+            React.createElement('i', {
+                key: 'icon',
+                'data-lucide': 'arrow-left',
+                className: 'w-4 h-4'
+            }),
+            React.createElement('span', {
+                key: 'label',
+                className: 'text-sm'
+            }, 'Back')
+        ]);
+    };
+
+    const modelSublabel = (model, effort) =>
+        effort === 'auto' ? model : `${model} · ${EFFORT_LABELS[effort]}`;
+
+    // Effort control for the selected model; models without effort get none.
+    // The meter shows the depth: for Auto it is the provider default, dimmed.
+    const renderEffortPicker = (stage, model, effort) => {
+        const spec = AI_MODEL_EFFORTS[model];
+        if (!spec) return null;
+        const depthLevel = effort === 'auto' ? spec.default : effort;
+        const fill = ((spec.levels.indexOf(depthLevel) + 1) / spec.levels.length) * 100;
+        const hint = effort === 'auto'
+            ? (spec.default ? `Provider default: ${EFFORT_LABELS[spec.default]}` : 'Provider default')
+            : EFFORT_HINTS[effort];
+
+        return React.createElement('div', {
+            key: 'effort',
+            className: 'px-3 pt-2.5 pb-3 border-b border-white/10'
+        }, [
+            React.createElement('div', {
+                key: 'caption',
+                id: `effort-caption-${stage}`,
+                className: 'mb-1.5 text-[11px] uppercase tracking-wider text-gray-500'
+            }, 'Reasoning effort'),
+            React.createElement('div', {
+                key: 'segments',
+                role: 'radiogroup',
+                'aria-labelledby': `effort-caption-${stage}`,
+                className: 'flex gap-0.5 p-0.5 rounded-lg bg-black/30 border border-white/10'
+            }, ['auto', ...spec.levels].map(level => React.createElement('button', {
+                key: level,
+                type: 'button',
+                role: 'radio',
+                'aria-checked': effort === level,
+                title: level === 'auto' ? 'Use the provider default' : EFFORT_HINTS[level],
+                onClick: () => handleEffortSelect(stage, level),
+                className: `flex-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                    effort === level
+                        ? 'bg-cyan-500/20 text-cyan-300 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.45)]'
+                        : 'text-gray-400 hover:text-white hover:bg-white/10'
+                }`
+            }, EFFORT_LABELS[level]))),
+            React.createElement('div', {
+                key: 'meter',
+                className: 'mt-2 h-0.5 rounded-full bg-white/10 overflow-hidden'
+            }, React.createElement('div', {
+                className: `h-full rounded-full transition-all duration-300 ${effort === 'auto' ? 'opacity-40' : ''}`,
+                style: {
+                    width: `${fill}%`,
+                    // Cyan (fast) to amber (deep), stretched over the full track
+                    backgroundImage: 'linear-gradient(90deg, #22d3ee, #f59e0b)',
+                    backgroundSize: fill ? `${10000 / fill}% 100%` : '100% 100%'
+                }
+            })),
+            React.createElement('div', {
+                key: 'hint',
+                className: 'mt-1.5 text-[11px] text-gray-400'
+            }, hint)
+        ]);
+    };
+
+    const renderModelSubmenu = ({ title, icon, stage, models, selected, effort, onSelect }) => {
+        return React.createElement('div', {
+            ref: settingsMenuRef,
+            className: `absolute bottom-full left-8 mb-2 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 ${
+                AI_MODEL_EFFORTS[selected] ? 'w-[320px]' : 'min-w-[220px]'
+            }`
+        }, [
+            React.createElement('div', {
+                key: 'header',
+                className: 'px-3 py-2 border-b border-white/10'
+            }, [
+                React.createElement('span', {
+                    key: 'title',
+                    className: 'text-sm font-medium text-white'
+                }, title)
+            ]),
+            renderEffortPicker(stage, selected, effort),
+            React.createElement('div', {
+                key: 'menu-content',
+                className: 'p-2 max-h-[50vh] overflow-y-auto'
+            }, [
+                ...models.map(model =>
+                    React.createElement(MenuItem, {
+                        key: model,
+                        icon,
+                        label: model,
+                        title: AI_MODEL_EFFORTS[model]
+                            ? `${getModelPriceLabel(model)} · Supports reasoning effort`
+                            : getModelPriceLabel(model),
+                        trailing: AI_MODEL_EFFORTS[model] && selected !== model
+                            ? React.createElement(GaugeGlyph, { key: 'gauge', className: 'w-3.5 h-3.5 text-gray-600' })
+                            : null,
+                        isActive: selected === model,
+                        onClick: () => onSelect(model)
+                    })
+                ),
+                React.createElement(SettingsBackButton, { key: 'back' })
+            ])
+        ]);
+    };
+
     // Render Settings Menu
     const renderSettingsMenu = () => {
         if (!settingsMenuOpen) return null;
-        
-        // Back button for submenus
-        const BackButton = () => {
-            return React.createElement('button', {
-                className: 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/10 transition-colors border-t border-white/10 mt-2 pt-3',
-                onClick: () => setSettingsSubmenu(null)
-            }, [
-                React.createElement('i', {
-                    key: 'icon',
-                    'data-lucide': 'arrow-left',
-                    className: 'w-4 h-4'
-                }),
-                React.createElement('span', {
-                    key: 'label',
-                    className: 'text-sm'
-                }, 'Back')
-            ]);
-        };
         
         // Main settings menu
         if (settingsSubmenu === null) {
@@ -606,6 +767,7 @@ const ChatInput = ({
                         key: 'command-model',
                         icon: 'cpu',
                         label: 'Command Model',
+                        sublabel: modelSublabel(selectedCommandModel, commandEffort),
                         hasSubmenu: true,
                         onClick: () => setSettingsSubmenu('commandModel')
                     }),
@@ -613,6 +775,7 @@ const ChatInput = ({
                         key: 'response-model',
                         icon: 'brain',
                         label: 'Response Model',
+                        sublabel: modelSublabel(selectedResponseModel, responseEffort),
                         hasSubmenu: true,
                         onClick: () => setSettingsSubmenu('responseModel')
                     })
@@ -620,72 +783,20 @@ const ChatInput = ({
             ]);
         }
         
-        // Command Model submenu
         if (settingsSubmenu === 'commandModel') {
-            return React.createElement('div', {
-                ref: settingsMenuRef,
-                className: 'absolute bottom-full left-8 mb-2 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[220px] z-50'
-            }, [
-                React.createElement('div', {
-                    key: 'header',
-                    className: 'px-3 py-2 border-b border-white/10'
-                }, [
-                    React.createElement('span', {
-                        key: 'title',
-                        className: 'text-sm font-medium text-white'
-                    }, 'Command Model')
-                ]),
-                React.createElement('div', {
-                    key: 'menu-content',
-                    className: 'p-2 max-h-[50vh] overflow-y-auto'
-                }, [
-                    ...currentModels.command.map(model => 
-                        React.createElement(MenuItem, {
-                            key: model,
-                            icon: 'cpu',
-                            label: model,
-                            title: getModelPriceLabel(model),
-                            isActive: selectedCommandModel === model,
-                            onClick: () => handleCommandModelSelect(model)
-                        })
-                    ),
-                    React.createElement(BackButton, { key: 'back' })
-                ])
-            ]);
+            return renderModelSubmenu({
+                title: 'Command Model', icon: 'cpu', stage: 'command',
+                models: currentModels.command, selected: selectedCommandModel,
+                effort: commandEffort, onSelect: handleCommandModelSelect
+            });
         }
-        
-        // Response Model submenu
+
         if (settingsSubmenu === 'responseModel') {
-            return React.createElement('div', {
-                ref: settingsMenuRef,
-                className: 'absolute bottom-full left-8 mb-2 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[220px] z-50'
-            }, [
-                React.createElement('div', {
-                    key: 'header',
-                    className: 'px-3 py-2 border-b border-white/10'
-                }, [
-                    React.createElement('span', {
-                        key: 'title',
-                        className: 'text-sm font-medium text-white'
-                    }, 'Response Model')
-                ]),
-                React.createElement('div', {
-                    key: 'menu-content',
-                    className: 'p-2 max-h-[50vh] overflow-y-auto'
-                }, [
-                    ...currentModels.response.map(model => 
-                        React.createElement(MenuItem, {
-                            key: model,
-                            icon: 'brain',
-                            label: model,
-                            title: getModelPriceLabel(model),
-                            isActive: selectedResponseModel === model,
-                            onClick: () => handleResponseModelSelect(model)
-                        })
-                    ),
-                    React.createElement(BackButton, { key: 'back' })
-                ])
-            ]);
+            return renderModelSubmenu({
+                title: 'Response Model', icon: 'brain', stage: 'response',
+                models: currentModels.response, selected: selectedResponseModel,
+                effort: responseEffort, onSelect: handleResponseModelSelect
+            });
         }
         
         return null;
@@ -870,18 +981,24 @@ const ChatInput = ({
                             React.createElement('button', {
                                 key: 'settings-btn',
                                 type: 'button',
-                                className: `p-2 rounded-lg transition-colors border ${
+                                className: `relative p-2 rounded-lg transition-colors border ${
                                     settingsMenuOpen 
                                         ? 'bg-white/20 text-white border-white/30' 
                                         : 'text-gray-400 hover:text-white hover:bg-white/10 border-white/20'
                                 }`,
                                 onClick: openSettingsMenu,
-                                title: 'Settings'
+                                title: effortCustomized ? 'Settings · reasoning effort is set' : 'Settings'
                             }, [
                                 React.createElement('i', {
                                     key: 'icon',
                                     'data-lucide': 'sliders-horizontal',
                                     className: 'w-4 h-4'
+                                }),
+                                // Reminds that a non-default effort changes speed and cost
+                                effortCustomized && React.createElement('span', {
+                                    key: 'effort-dot',
+                                    'aria-hidden': 'true',
+                                    className: 'absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 ring-2 ring-gray-900'
                                 })
                             ]),
                             renderSettingsMenu()
