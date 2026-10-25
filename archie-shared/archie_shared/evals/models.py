@@ -8,7 +8,11 @@ from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-EvalStage = Literal["stage1", "full"]
+from archie_shared.swarm.models import SwarmImportance, SwarmWatchTask
+
+# stage1 / full: chat pipeline; swarm_turn / swarm_watch: one swarm agent turn or check (ARCHIE-297)
+EvalStage = Literal["stage1", "full", "swarm_turn", "swarm_watch"]
+EvalAgentKind = Literal["chat", "swarm"]
 EvalAttemptStatus = Literal["passed", "failed", "error"]
 EvalRunStatus = Literal["queued", "running", "completed", "cancelled", "failed"]
 EvalTrigger = Literal["ui", "claude", "cli"]
@@ -54,8 +58,44 @@ class EvalExpect(BaseModel):
         default=None,
         description=(
             "The monitoring judge must not grade any of the case's rules red "
-            "(full only; assistant_prompt and format_* rules)"
+            "(full only; assistant_prompt and format_* rules; swarm cases: swarm specs)"
         ),
+    )
+    alert: Optional[bool] = Field(
+        default=None,
+        description="swarm_watch: the check must write an alert (true) or stay silent (false)",
+    )
+    importance: Optional[List[SwarmImportance]] = Field(
+        default=None, description="swarm_watch: allowed importance of the alert"
+    )
+    reply_contains: Optional[str] = Field(
+        default=None, description="Swarm cases: substring the reply or alert must contain"
+    )
+    reply_empty: Optional[bool] = Field(
+        default=None, description="swarm_turn: the agent must stay silent (true) or reply (false)"
+    )
+
+
+class SwarmEvalInput(BaseModel):
+    """Fixed context of a swarm eval case: the agent, its chat, memory and tool results"""
+
+    agent_id: str = Field(description="Swarm agent that takes the turn, e.g. 'light'")
+    watch_task: Optional[SwarmWatchTask] = Field(
+        default=None, description="Check to run (swarm_watch only)"
+    )
+    history: List[str] = Field(
+        default_factory=list,
+        description="Swarm chat lines before the trigger, e.g. '@weather: Дождь после 17:00'",
+    )
+    memory: List[str] = Field(
+        default_factory=list, description="Memory lines the agent sees (facts, today's notes)"
+    )
+    tool_results: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Tool name -> JSON output the tool returns in the case (no real calls)",
+    )
+    now: Optional[str] = Field(
+        default=None, description="Local date and time of the case, ISO 8601; None = now"
     )
 
 
@@ -78,7 +118,15 @@ class EvalCaseInfo(BaseModel):
     )
     input: str = Field(description="User message sent to the agent")
     response_format: str = Field(description="ChatRequest.response_format for the case")
-    stage: EvalStage = Field(description="stage1 = Stage 1 only, full = whole pipeline")
+    stage: EvalStage = Field(
+        description="stage1 = Stage 1 only, full = whole pipeline, swarm_turn / swarm_watch = swarm"
+    )
+    agent_kind: EvalAgentKind = Field(
+        default="chat", description="Agent kind the case runs on (ARCHIE-297)"
+    )
+    swarm: Optional[SwarmEvalInput] = Field(
+        default=None, description="Swarm context (swarm cases only)"
+    )
     judge: bool = Field(default=False, description="Score the response with the LLM judge")
     expect: EvalExpect = Field(description="Assertions for the case")
 
