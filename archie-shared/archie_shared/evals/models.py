@@ -11,8 +11,16 @@ from pydantic import BaseModel, Field
 from archie_shared.swarm.models import SwarmImportance, SwarmWatchTask
 
 # stage1 / full: chat pipeline; swarm_turn / swarm_watch: one swarm agent turn or check (ARCHIE-297)
-EvalStage = Literal["stage1", "full", "swarm_turn", "swarm_watch"]
-EvalAgentKind = Literal["chat", "swarm"]
+EvalStage = Literal[
+    "stage1",
+    "full",
+    "swarm_turn",
+    "swarm_watch",
+    "ephemeral_run",
+    "temporal_run",
+    "cognitive_tick",
+]
+EvalAgentKind = Literal["chat", "swarm", "ephemeral", "temporal", "cognitive"]
 EvalAttemptStatus = Literal["passed", "failed", "error"]
 EvalRunStatus = Literal["queued", "running", "completed", "cancelled", "failed"]
 EvalTrigger = Literal["ui", "claude", "cli"]
@@ -69,10 +77,12 @@ class EvalExpect(BaseModel):
         default=None, description="swarm_watch: allowed importance of the alert"
     )
     reply_contains: Optional[str] = Field(
-        default=None, description="Swarm cases: substring the reply or alert must contain"
+        default=None,
+        description="Swarm cases: substring the reply or alert must contain",
     )
     reply_empty: Optional[bool] = Field(
-        default=None, description="swarm_turn: the agent must stay silent (true) or reply (false)"
+        default=None,
+        description="swarm_turn: the agent must stay silent (true) or reply (false)",
     )
 
 
@@ -88,14 +98,16 @@ class SwarmEvalInput(BaseModel):
         description="Swarm chat lines before the trigger, e.g. '@weather: Дождь после 17:00'",
     )
     memory: List[str] = Field(
-        default_factory=list, description="Memory lines the agent sees (facts, today's notes)"
+        default_factory=list,
+        description="Memory lines the agent sees (facts, today's notes)",
     )
     tool_results: Dict[str, str] = Field(
         default_factory=dict,
         description="Tool name -> JSON output the tool returns in the case (no real calls)",
     )
     now: Optional[str] = Field(
-        default=None, description="Local date and time of the case, ISO 8601; None = now"
+        default=None,
+        description="Local date and time of the case, ISO 8601; None = now",
     )
 
 
@@ -111,7 +123,9 @@ class EvalCaseInfo(BaseModel):
     prompts: List[str] = Field(
         description="Prompt templates the case tests, e.g. 'cmd_prompt', 'format_ui_answer'"
     )
-    tags: List[str] = Field(default_factory=list, description="Free-form tags for selection")
+    tags: List[str] = Field(
+        default_factory=list, description="Free-form tags for selection"
+    )
     rules: List[str] = Field(
         default_factory=list,
         description="Prompt spec rules the case protects, as 'spec:rule_id'",
@@ -127,7 +141,9 @@ class EvalCaseInfo(BaseModel):
     swarm: Optional[SwarmEvalInput] = Field(
         default=None, description="Swarm context (swarm cases only)"
     )
-    judge: bool = Field(default=False, description="Score the response with the LLM judge")
+    judge: bool = Field(
+        default=False, description="Score the response with the LLM judge"
+    )
     expect: EvalExpect = Field(description="Assertions for the case")
 
 
@@ -159,14 +175,22 @@ class EvalCaseResult(BaseModel):
     failures: List[EvalAssertionFailure] = Field(
         default_factory=list, description="Failed assertions"
     )
-    error: Optional[str] = Field(default=None, description="Exception text if status is error")
+    error: Optional[str] = Field(
+        default=None, description="Exception text if status is error"
+    )
     stage1_ms: Optional[int] = Field(default=None, description="Stage 1 duration")
     stage2_ms: Optional[int] = Field(default=None, description="Stage 2 duration")
     stage3_ms: Optional[int] = Field(default=None, description="Stage 3 duration")
     total_ms: Optional[int] = Field(default=None, description="Whole attempt duration")
-    total_tokens: Optional[int] = Field(default=None, description="Tokens used by the pipeline")
-    ui_items_count: Optional[int] = Field(default=None, description="Number of ui_answer items")
-    judge: Optional[EvalJudgeScores] = Field(default=None, description="Judge scores if judged")
+    total_tokens: Optional[int] = Field(
+        default=None, description="Tokens used by the pipeline"
+    )
+    ui_items_count: Optional[int] = Field(
+        default=None, description="Number of ui_answer items"
+    )
+    judge: Optional[EvalJudgeScores] = Field(
+        default=None, description="Judge scores if judged"
+    )
     output_json: Optional[str] = Field(
         default=None, description="Raw agent output (decision or content) as JSON"
     )
@@ -177,11 +201,14 @@ class EvalRunRequest(BaseModel):
     """Request to start an eval run; cases match if they match any selector"""
 
     case_ids: List[str] = Field(default_factory=list, description="Select cases by ID")
-    prompts: List[str] = Field(default_factory=list, description="Select cases by prompt")
+    prompts: List[str] = Field(
+        default_factory=list, description="Select cases by prompt"
+    )
     tags: List[str] = Field(default_factory=list, description="Select cases by tag")
     suites: List[str] = Field(default_factory=list, description="Select cases by suite")
     rules: List[str] = Field(
-        default_factory=list, description="Select cases by protected rule 'spec:rule_id'"
+        default_factory=list,
+        description="Select cases by protected rule 'spec:rule_id'",
     )
     models: List[str] = Field(min_length=1, description="Models to run every case on")
     repeats: int = Field(
@@ -190,7 +217,9 @@ class EvalRunRequest(BaseModel):
     judge: bool = Field(default=False, description="Run the LLM judge for judge cases")
     judge_model: Optional[str] = Field(default=None, description="Judge model (OpenAI)")
     reason: str = Field(min_length=3, description="Why the run was started")
-    jira_key: Optional[str] = Field(default=None, description="Related JIRA issue, e.g. ARCHIE-208")
+    jira_key: Optional[str] = Field(
+        default=None, description="Related JIRA issue, e.g. ARCHIE-208"
+    )
     triggered_by: EvalTrigger = Field(default="ui", description="Who started the run")
 
 
@@ -201,7 +230,9 @@ class EvalRunInfo(BaseModel):
     status: EvalRunStatus = Field(description="Run state")
     request: EvalRunRequest = Field(description="Request the run was started with")
     case_ids: List[str] = Field(description="IDs of the selected cases")
-    git_sha: Optional[str] = Field(default=None, description="Agent git commit, if known")
+    git_sha: Optional[str] = Field(
+        default=None, description="Agent git commit, if known"
+    )
     prompt_hashes: Dict[str, str] = Field(
         default_factory=dict, description="Prompt template name -> sha256 of its source"
     )
@@ -211,9 +242,13 @@ class EvalRunInfo(BaseModel):
     failed: int = Field(default=0, description="Failed attempts")
     errors: int = Field(default=0, description="Attempts that raised an error")
     total_tokens: int = Field(default=0, description="Tokens used so far")
-    error: Optional[str] = Field(default=None, description="Run-level error if status is failed")
+    error: Optional[str] = Field(
+        default=None, description="Run-level error if status is failed"
+    )
     created_at: str = Field(description="ISO 8601 UTC timestamp")
-    finished_at: Optional[str] = Field(default=None, description="ISO 8601 UTC timestamp")
+    finished_at: Optional[str] = Field(
+        default=None, description="ISO 8601 UTC timestamp"
+    )
 
 
 class EvalAttemptRef(BaseModel):
@@ -222,7 +257,9 @@ class EvalAttemptRef(BaseModel):
     case_id: str = Field(description="EvalCaseInfo.id")
     model: str = Field(description="Model of the attempt")
     attempt: int = Field(description="Attempt number")
-    step: Optional[str] = Field(default=None, description="Current pipeline step, if known")
+    step: Optional[str] = Field(
+        default=None, description="Current pipeline step, if known"
+    )
 
 
 class EvalSnapshotEvent(BaseModel):
@@ -238,7 +275,9 @@ class EvalSnapshotEvent(BaseModel):
 class EvalAttemptStartedEvent(BaseModel):
     """An attempt started"""
 
-    type: Literal["attempt_started"] = Field("attempt_started", description="Event type")
+    type: Literal["attempt_started"] = Field(
+        "attempt_started", description="Event type"
+    )
     attempt: EvalAttemptRef = Field(description="Started attempt")
 
 
@@ -252,7 +291,9 @@ class EvalAttemptStepEvent(BaseModel):
 class EvalAttemptFinishedEvent(BaseModel):
     """An attempt finished"""
 
-    type: Literal["attempt_finished"] = Field("attempt_finished", description="Event type")
+    type: Literal["attempt_finished"] = Field(
+        "attempt_finished", description="Event type"
+    )
     result: EvalCaseResult = Field(description="Attempt result")
     run: EvalRunInfo = Field(description="Run state with updated totals")
 
