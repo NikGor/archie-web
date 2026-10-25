@@ -618,91 +618,6 @@ function getModelPriceLabel(model) {
     return price ? `Base USD / 1M tokens: input $${price.input}, output $${price.output}` : model;
 }
 
-// Gen UI Level configuration
-const GEN_UI_LEVELS = {
-    1: {
-        name: "Level 1",
-        description: "Basic - All models, plain text only",
-        modelProviders: ["openai", "openrouter"],
-        showCommandModel: false,
-        showFinalOutputModel: true,
-        responseFormats: ["plain"],
-        fixedFormat: "plain",
-        defaults: {
-            commandModel: "gpt-6-luna",
-            finalOutputModel: "gpt-6-luna"
-        }
-    },
-    2: {
-        name: "Level 2",
-        description: "Standard - Text + Quick Actions",
-        modelProviders: ["openai", "openrouter"],
-        showCommandModel: true,
-        showFinalOutputModel: true,
-        responseFormats: [],
-        fixedFormat: "level2_answer",
-        defaults: {
-            commandModel: "gpt-6-luna",
-            finalOutputModel: "gpt-6-luna"
-        }
-    },
-    3: {
-        name: "Level 3",
-        description: "Enhanced - Text + Widget + Actions",
-        modelProviders: ["openai", "openrouter"],
-        showCommandModel: true,
-        showFinalOutputModel: true,
-        responseFormats: [],
-        fixedFormat: "level3_answer",
-        defaults: {
-            commandModel: "gpt-6-luna",
-            finalOutputModel: "gpt-6-luna"
-        }
-    },
-    4: {
-        name: "Level 4",
-        description: "Advanced - All models, UI Answer",
-        modelProviders: ["openai", "openrouter"],
-        showCommandModel: true,
-        showFinalOutputModel: true,
-        responseFormats: ["ui_answer"],
-        fixedFormat: "ui_answer",
-        defaults: {
-            commandModel: "gpt-6-luna",
-            finalOutputModel: "gpt-6-luna"
-        }
-    },
-    5: {
-        name: "Level 5",
-        description: "Coming soon ;)",
-        modelProviders: ["openai", "openrouter"],
-        showCommandModel: true,
-        showFinalOutputModel: true,
-        responseFormats: ["ui_answer"],
-        fixedFormat: "ui_answer",
-        comingSoon: true,
-        defaults: {
-            commandModel: "gpt-6-luna",
-            finalOutputModel: "gpt-6-luna"
-        }
-    }
-};
-
-// Get selected Gen UI level from localStorage or default
-function getSelectedGenUILevel() {
-    return parseInt(localStorage.getItem('selectedGenUILevel')) || 4;
-}
-
-// Set selected Gen UI level in localStorage
-function setSelectedGenUILevel(level) {
-    localStorage.setItem('selectedGenUILevel', level);
-    window.selectedGenUILevel = level;
-    const config = GEN_UI_LEVELS[level];
-    if (config && config.fixedFormat) {
-        setSelectedResponseFormat(config.fixedFormat);
-    }
-}
-
 // Available response formats
 const RESPONSE_FORMATS = [
     { value: "auto", label: "Auto" },
@@ -794,9 +709,6 @@ const ASSISTANT_PERSONAS = [
 
 // Open assistant settings modal
 function openChatSettingsModal() {
-    const currentLevel = getSelectedGenUILevel();
-    let selectedLevel = currentLevel;
-    
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 flex items-center justify-center z-50';
     modal.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
@@ -845,42 +757,6 @@ function openChatSettingsModal() {
         .then(p => { if (p && p.persona) personaSelect.value = p.persona; })
         .catch(() => {});
 
-    // Gen UI Level selection section
-    const levelSection = document.createElement('div');
-    levelSection.className = 'mb-6';
-    
-    const levelLabel = document.createElement('label');
-    levelLabel.className = 'block text-sm font-medium text-gray-300 mb-2';
-    levelLabel.textContent = 'Gen UI Level';
-    levelSection.appendChild(levelLabel);
-    
-    const levelSelect = document.createElement('select');
-    levelSelect.className = 'w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-white/20 focus:border-blue-500 focus:outline-none';
-    levelSelect.style.color = 'white';
-    levelSelect.style.backgroundColor = '#1f2937';
-    
-    Object.entries(GEN_UI_LEVELS).forEach(([level, config]) => {
-        const option = document.createElement('option');
-        option.value = level;
-        option.textContent = `${config.name} - ${config.description}`;
-        option.selected = parseInt(level) === currentLevel;
-        option.style.backgroundColor = '#1f2937';
-        option.style.color = 'white';
-        if (config.comingSoon) {
-            option.disabled = true;
-            option.style.color = '#6b7280';
-        }
-        levelSelect.appendChild(option);
-    });
-    
-    levelSection.appendChild(levelSelect);
-    modalContent.appendChild(levelSection);
-    
-    // Update the selected level when it changes
-    levelSelect.onchange = () => {
-        selectedLevel = parseInt(levelSelect.value);
-    };
-    
     // Buttons container
     const buttonsContainer = document.createElement('div');
     buttonsContainer.className = 'flex gap-3';
@@ -890,8 +766,6 @@ function openChatSettingsModal() {
     saveBtn.className = 'flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors font-medium';
     saveBtn.textContent = 'Сохранить';
     saveBtn.onclick = async () => {
-        setSelectedGenUILevel(selectedLevel);
-
         // Persist the assistant character to the profile (DB + Redis via signal)
         const persona = personaSelect.value;
         try {
@@ -924,8 +798,9 @@ function openChatSettingsModal() {
     document.body.appendChild(modal);
 }
 
-// Initialize selected models, response format, and Gen UI level on page load
-window.selectedGenUILevel = getSelectedGenUILevel();
+// Initialize selected models and response format on page load
+// Gen UI Level moved to the chat input format menu; drop the stale key
+localStorage.removeItem('selectedGenUILevel');
 window.selectedCommandModel = getSelectedCommandModel();
 window.selectedFinalOutputModel = getSelectedFinalOutputModel();
 window.selectedResponseFormat = getSelectedResponseFormat();
