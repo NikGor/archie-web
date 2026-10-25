@@ -20,6 +20,7 @@ from archie_web.chat_monitoring.models import (
     RuleHandling,
     TurnEvaluation,
 )
+from archie_web.chat_monitoring import swarm
 from archie_web.prompt_evals.services import call_agent
 
 logger = logging.getLogger(__name__)
@@ -416,9 +417,72 @@ def get_conversation_detail(conversation: Conversation) -> dict:
 RULE_EXAMPLES = 5
 
 
+def _rule_entry(stats: dict[str, dict], rule: dict) -> dict:
+    key = f"{rule['spec']}:{rule['rule_id']}"
+    return stats.setdefault(
+        key,
+        {
+            "key": key,
+            "spec": rule["spec"],
+            "rule_id": rule["rule_id"],
+            "text": rule["text"],
+            "red": 0,
+            "orange": 0,
+            "green": 0,
+            "not_applicable": 0,
+            # Broken turns by mark: none = nobody took them yet (ARCHIE-251)
+            "handling": {"none": 0, "in_progress": 0, "fixed": 0},
+            "jira_keys": [],
+            "versions": {},
+            "examples": [],
+        },
+    )
+
+
+def _count_rule(
+    entry: dict, rule: dict, spec_versions: dict, mark: object | None
+) -> str:
+    """Add one graded rule to its entry; returns the grade."""
+    grade = rule.get("grade") or "not_applicable"
+    entry[grade] += 1
+    version = spec_versions.get(rule["spec"], "")
+    by_version = entry["versions"].setdefault(
+        version,
+        {"red": 0, "orange": 0, "green": 0, "not_applicable": 0, "open": 0},
+    )
+    by_version[grade] += 1
+    if grade in BAD_GRADES:
+        entry["handling"][mark.status if mark else "none"] += 1
+        if mark and mark.jira_key and mark.jira_key not in entry["jira_keys"]:
+            entry["jira_keys"].append(mark.jira_key)
+        # open = broken and not fixed yet
+        by_version["open"] += 0 if mark and mark.status == "fixed" else 1
+    return grade
+
+
+def _add_swarm_rule_stats(stats: dict[str, dict], since: datetime) -> int:
+    """Swarm agent messages judged by the swarm specs (ARCHIE-297)."""
+    evaluations = swarm.evaluations_since(since)
+    marks = swarm.marks_since(since)
+    for evaluation in evaluations:
+        for rule in evaluation.rules:
+            entry = _rule_entry(stats, rule)
+            mark = marks.get((evaluation.event_id, entry["key"]))
+            grade = _count_rule(entry, rule, evaluation.spec_versions, mark)
+            if grade in BAD_GRADES and len(entry["examples"]) < RULE_EXAMPLES:
+                entry["examples"].append(
+                    {
+                        **swarm.example(evaluation, grade, rule.get("reason")),
+                        "handling": mark_to_dict(mark) if mark else None,
+                    }
+                )
+    return evaluations.count()
+
+
 def rule_stats(since: datetime) -> dict:
     """Grades per judged rule over turns created since `since` (the autofix loop
-    picks rules to fix and checks earlier fixes by the turns after a deploy)."""
+    picks rules to fix and checks earlier fixes by the turns after a deploy).
+    Chat turns and swarm agent messages count together (ARCHIE-297)."""
     stats: dict[str, dict] = {}
     evaluations = (
         TurnEvaluation.objects.filter(message__created_at__gte=since)
@@ -432,41 +496,12 @@ def rule_stats(since: datetime) -> dict:
     }
     for evaluation in evaluations:
         for rule in evaluation.rules:
-            key = f"{rule['spec']}:{rule['rule_id']}"
-            entry = stats.setdefault(
-                key,
-                {
-                    "key": key,
-                    "spec": rule["spec"],
-                    "rule_id": rule["rule_id"],
-                    "text": rule["text"],
-                    "red": 0,
-                    "orange": 0,
-                    "green": 0,
-                    "not_applicable": 0,
-                    # Broken turns by mark: none = nobody took them yet (ARCHIE-251)
-                    "handling": {"none": 0, "in_progress": 0, "fixed": 0},
-                    "jira_keys": [],
-                    "versions": {},
-                    "examples": [],
-                },
-            )
-            grade = rule.get("grade") or "not_applicable"
-            entry[grade] += 1
-            version = evaluation.spec_versions.get(rule["spec"], "")
-            by_version = entry["versions"].setdefault(
-                version,
-                {"red": 0, "orange": 0, "green": 0, "not_applicable": 0, "open": 0},
-            )
-            by_version[grade] += 1
+            entry = _rule_entry(stats, rule)
+            key = entry["key"]
+            mark = marks.get((evaluation.message_id, key))
+            grade = _count_rule(entry, rule, evaluation.spec_versions, mark)
             if grade not in BAD_GRADES:
                 continue
-            mark = marks.get((evaluation.message_id, key))
-            entry["handling"][mark.status if mark else "none"] += 1
-            if mark and mark.jira_key and mark.jira_key not in entry["jira_keys"]:
-                entry["jira_keys"].append(mark.jira_key)
-            # open = broken and not fixed yet
-            by_version["open"] += 0 if mark and mark.status == "fixed" else 1
             if len(entry["examples"]) < RULE_EXAMPLES:
                 entry["examples"].append(
                     {
@@ -481,12 +516,18 @@ def rule_stats(since: datetime) -> dict:
                         "handling": mark_to_dict(mark) if mark else None,
                     }
                 )
+    swarm_turns = _add_swarm_rule_stats(stats, since)
     rules = sorted(
         stats.values(), key=lambda entry: (-entry["red"], -entry["orange"], entry["key"])
     )
     for entry in rules:
         entry["applicable"] = entry["red"] + entry["orange"] + entry["green"]
-    return {"since": since.isoformat(), "turns": evaluations.count(), "rules": rules}
+    return {
+        "since": since.isoformat(),
+        "turns": evaluations.count() + swarm_turns,
+        "swarm_turns": swarm_turns,
+        "rules": rules,
+    }
 
 
 def handling_to_dict(conversation: Conversation) -> dict | None:
@@ -637,6 +678,8 @@ def set_rule_handling(
     Turns fixed under another ticket keep their mark; 'none' removes only the
     marks of `jira_key`."""
     check_handling_status(status)
+    if swarm.is_swarm_rule(rule_key):
+        return swarm.set_rule_handling(rule_key, status, jira_key, actor, before)
     evaluations = TurnEvaluation.objects.filter(message__created_at__lt=before)
     evaluations = (
         evaluations.exclude(criteria=[])
