@@ -34,9 +34,8 @@ const parseMarkdownWithPillLinks = (text) => {
         /<a href="([^"]*)"(?: title="([^"]*)")?>([\s\S]*?)<\/a>/g,
         (match, href, title, linkText) => {
             if (!href) return match;
-            const pillClass = 'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-white/20 hover:bg-white/30 text-white border border-white/30 transition-all duration-200 cursor-pointer no-underline';
             const titleAttr = title ? ` title="${title}"` : '';
-            return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="${pillClass}"${titleAttr}><span class="mr-1">🔗</span>${linkText}</a>`;
+            return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="link-pill"${titleAttr}><span class="link-pill__text">${linkText}</span><svg class="link-pill__icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11l6-6M6 5h5v5"/></svg></a>`;
         }
     );
 
