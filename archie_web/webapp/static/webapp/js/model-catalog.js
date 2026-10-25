@@ -736,3 +736,48 @@ const AI_MODEL_PRICES = {
     }
 };
 
+// ARCHIE-289: reasoning effort levels per model, from OpenRouter supported_efforts
+// (checked 2026-10-25). OpenAI models use the levels of their openai/<id> twin.
+// A model missing here gets no effort control in the chat settings.
+const AI_MODEL_EFFORTS = {
+    "gpt-6-luna": { levels: ["none", "low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "gpt-5.6-luna": { levels: ["none", "low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "gpt-5.4": { levels: ["none", "low", "medium", "high", "xhigh"], default: "medium" },
+    "gpt-5.4-pro": { levels: ["medium", "high", "xhigh"], default: "medium" },
+    "gpt-5.4-mini": { levels: ["none", "low", "medium", "high", "xhigh"], default: "medium" },
+    "gpt-5.4-nano": { levels: ["none", "low", "medium", "high", "xhigh"], default: "medium" },
+    "google/gemini-3.1-pro-preview": { levels: ["low", "medium", "high"], default: "medium" },
+    "google/gemini-3-flash-preview": { levels: ["none", "minimal", "low", "medium", "high"], default: "medium" },
+    "google/gemini-3.1-flash-lite-preview": { levels: ["none", "minimal", "low", "medium", "high"], default: "minimal" },
+    "anthropic/claude-opus-4.6": { levels: ["none", "low", "medium", "high", "max"], default: "high" },
+    "anthropic/claude-sonnet-4.6": { levels: ["none", "low", "medium", "high", "max"], default: "medium" },
+    "openai/gpt-6.1-sol": { levels: ["low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "openai/gpt-6-luna": { levels: ["none", "low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "openai/gpt-6-astra": { levels: ["low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "openai/gpt-5.6-terra": { levels: ["none", "low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "anthropic/claude-haiku-5.5": { levels: ["none", "low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "google/gemini-4-argon": { levels: ["low", "medium", "high"], default: "medium" },
+    "google/gemini-3.8-flash": { levels: ["low", "medium", "high"], default: "medium" },
+    "google/gemini-3.5-flash-lite": { levels: ["minimal", "low", "medium", "high"], default: "minimal" },
+    "x-ai/grok-4.7": { levels: ["low", "medium", "high", "xhigh"], default: "high" },
+    "deepseek/deepseek-v4.1-flash-1017": { levels: ["none", "low", "high", "max"], default: "high" },
+    "deepseek/deepseek-v4-pro-0813": { levels: ["none", "low", "high", "max"], default: "high" },
+    "qwen/qwen3.8-max-prime": { levels: ["minimal", "low", "medium", "high", "xhigh"], default: "xhigh" },
+    "qwen/qwen3.8-27b": { levels: ["none", "low", "medium", "xhigh"], default: "xhigh" },
+    "z-ai/glm-5.3": { levels: ["low", "high", "max"], default: "max" },
+    "z-ai/glm-5.3-flash": { levels: ["low", "high", "max"], default: "max" },
+    "moonshotai/kimi-k3": { levels: ["none", "low", "high", "max"], default: "max" },
+    "mistralai/mistral-large-4-0": { levels: ["none", "high"], default: "high" },
+    "meta/muse-spark-open": { levels: ["low", "medium", "high", "xhigh"], default: "medium" },
+    "meta/muse-wonder": { levels: ["minimal", "low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "stepfun/step-5-preview": { levels: ["low", "medium", "high"], default: "medium" },
+    "reflection/beam-1.0-501b-a23b": { levels: ["low", "medium", "high", "xhigh", "max"], default: "max" },
+    "inception/mercury-2.5": { levels: ["none", "low", "medium", "high"], default: "medium" },
+    "nex-agi/nex-n2.5-mini": { levels: ["none", "medium", "high"], default: "high" },
+    "nex-agi/nex-n2.5-pro": { levels: ["none", "medium", "high"], default: "high" },
+    "upstage/solar-mini4": { levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"], default: "medium" },
+    "mistralai/mistral-medium-3-5": { levels: ["none", "high"], default: "high" },
+    "tencent/hy4-preview": { levels: ["none", "low", "high"], default: "high" },
+    "prism-ml/ternary-bonsai-2-27b": { levels: ["none", "medium", "xhigh"], default: "xhigh" },
+    "fireworks/ember-1": { levels: ["none", "low", "high", "max"], default: "max" }
+};
