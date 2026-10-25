@@ -107,6 +107,12 @@ class EvalCase(models.Model):
     input = models.TextField()
     response_format = models.CharField(max_length=32)
     stage = models.CharField(max_length=16)
+    agent_kind = models.CharField(
+        max_length=16, default="chat", help_text="chat | swarm (ARCHIE-297)"
+    )
+    swarm = models.JSONField(
+        null=True, blank=True, help_text="SwarmEvalInput of a swarm case"
+    )
     judge = models.BooleanField(default=False)
     expect = models.JSONField(default=dict)
     enabled = models.BooleanField(default=True)
@@ -132,6 +138,8 @@ class EvalCase(models.Model):
             "input": self.input,
             "response_format": self.response_format,
             "stage": self.stage,
+            "agent_kind": self.agent_kind,
+            "swarm": self.swarm,
             "judge": self.judge,
             "expect": self.expect,
         }

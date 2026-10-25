@@ -38,6 +38,8 @@ def _apply(case: EvalCase, draft: dict, info: EvalCaseInfo) -> None:
     case.input = draft["input"]
     case.response_format = draft["response_format"]
     case.stage = draft["stage"]
+    case.agent_kind = info.agent_kind
+    case.swarm = info.swarm.model_dump(mode="json") if info.swarm else None
     case.judge = draft.get("judge", False)
     case.expect = info.expect.model_dump(exclude_none=True)
 
