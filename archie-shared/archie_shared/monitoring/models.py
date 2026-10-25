@@ -9,6 +9,7 @@ from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from archie_shared.chat.models import ResponseFormat
+from archie_shared.swarm.models import SwarmMessage
 
 MonitorGrade = Literal["red", "orange", "green"]
 MonitorCriterion = Literal[
@@ -60,6 +61,8 @@ MonitorOutcomeReason = Literal[
 ]
 MonitorRunStatus = Literal["running", "completed", "failed"]
 MonitorTrigger = Literal["ui", "schedule", "claude", "cli"]
+# Agent kind whose records a run judges (ARCHIE-297)
+MonitorAgentKind = Literal["chat", "swarm"]
 
 MONITOR_MAX_CONVERSATIONS = 200
 
@@ -191,6 +194,10 @@ class MonitorRunRequest(BaseModel):
         default=None, description="Judge model; None = agent default"
     )
     triggered_by: MonitorTrigger = Field(default="ui", description="Who started the run")
+    agent_kind: MonitorAgentKind = Field(
+        default="chat",
+        description="chat: assistant turns of conversations; swarm: swarm agent messages",
+    )
 
 
 class MonitorRunInfo(BaseModel):
@@ -211,3 +218,39 @@ class MonitorRunInfo(BaseModel):
     error: Optional[str] = Field(default=None, description="Run-level error if failed")
     created_at: str = Field(description="ISO 8601 UTC timestamp")
     finished_at: Optional[str] = Field(default=None, description="ISO 8601 UTC timestamp")
+
+
+class SwarmMonitorRecord(BaseModel):
+    """A swarm agent message to judge, with what it answers (ARCHIE-297)"""
+
+    message: SwarmMessage = Field(description="The judged swarm agent message")
+    trigger: Optional[SwarmMessage] = Field(
+        default=None, description="The message it reacts to (reply_to), if any"
+    )
+    history: List[SwarmMessage] = Field(
+        default_factory=list, description="Swarm chat messages before it, oldest first"
+    )
+
+
+class SwarmMonitorPendingBatch(BaseModel):
+    """Swarm agent messages without an evaluation, oldest first"""
+
+    records: List[SwarmMonitorRecord] = Field(description="Records to judge")
+
+
+class SwarmTurnEvaluation(BaseModel):
+    """Judge verdict on one swarm agent message (ARCHIE-297)"""
+
+    run_id: str = Field(description="Monitor run ID")
+    message_id: str = Field(description="Judged swarm message ID")
+    agent_id: str = Field(description="Agent that wrote the message")
+    grade: MonitorGrade = Field(description="Overall grade: the worst graded rule")
+    rules: List[MonitorRuleScore] = Field(
+        default_factory=list, description="Per-rule scores by the swarm prompt specs"
+    )
+    spec_versions: Dict[str, str] = Field(
+        default_factory=dict, description="Spec -> fingerprint of the judged spec version"
+    )
+    judge_model: str = Field(description="Judge model ID")
+    judge_cost: Optional[float] = Field(default=None, description="Judge call cost in USD")
+    evaluated_at: str = Field(description="ISO 8601 UTC timestamp")
