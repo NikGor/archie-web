@@ -110,6 +110,9 @@ ResponseFormat = Literal[
     "widget",
 ]
 
+# ARCHIE-289: OpenRouter reasoning effort levels; "none" turns reasoning off
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
 
 class ChatMessage(BaseModel):
     """Individual chat message in a conversation"""
@@ -238,6 +241,14 @@ class ChatRequest(BaseModel):
     )
     final_output_model: Optional[str] = Field(
         default=None, description="LLM model to use for final output generation"
+    )
+    command_effort: Optional[ReasoningEffort] = Field(
+        default=None,
+        description="Reasoning effort of the command model; None keeps the provider default",
+    )
+    final_output_effort: Optional[ReasoningEffort] = Field(
+        default=None,
+        description="Reasoning effort of the final output model; None keeps the provider default",
     )
     images: Optional[List[ImageAttachment]] = Field(
         default=None,
