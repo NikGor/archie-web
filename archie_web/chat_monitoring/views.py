@@ -10,7 +10,8 @@ from datetime import datetime, timedelta
 
 from archie_shared.monitoring.models import (MONITOR_MAX_CONVERSATIONS,
                                              MonitorRunInfo, MonitorRunRequest,
-                                             MonitorTurnEvaluation)
+                                             MonitorTurnEvaluation,
+                                             SwarmTurnEvaluation)
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -18,7 +19,7 @@ from django.views.decorators.http import require_GET, require_POST
 from pydantic import ValidationError
 
 from archie_web.ai_assistant.models import Conversation, Message
-from archie_web.chat_monitoring import services
+from archie_web.chat_monitoring import services, swarm
 from archie_web.chat_monitoring.models import MonitorRun
 from archie_web.prompt_evals.services import AgentError
 from archie_web.prompt_evals.views import (SERVICE_ACTOR, api_view,
@@ -71,6 +72,38 @@ def ingest_evaluation(request: HttpRequest) -> JsonResponse:
             f"chat_monitoring_warning_001: Message {evaluation.message_id} is gone"
         )
         return JsonResponse({"error": "Message not found"}, status=404)
+    return JsonResponse({"id": stored.id})
+
+
+@service_only
+@require_GET
+def get_swarm_pending(request: HttpRequest) -> JsonResponse:
+    """Agent <- Django: swarm agent messages without an evaluation (ARCHIE-297)."""
+    limit = min(
+        int(request.GET.get("limit", MONITOR_MAX_CONVERSATIONS)),
+        MONITOR_MAX_CONVERSATIONS,
+    )
+    return JsonResponse(swarm.get_pending_batch(limit).model_dump(mode="json"))
+
+
+@service_only
+@require_POST
+def ingest_swarm_evaluation(request: HttpRequest) -> JsonResponse:
+    """Agent -> Django: judge result for one swarm agent message (ARCHIE-297)."""
+    try:
+        evaluation = SwarmTurnEvaluation.model_validate_json(request.body)
+    except ValidationError as error:
+        logger.error(
+            f"chat_monitoring_error_004: Bad swarm evaluation: \033[31m{error}\033[0m"
+        )
+        return JsonResponse({"error": str(error)}, status=422)
+    try:
+        stored = swarm.store_evaluation(evaluation)
+    except swarm.SwarmEvent.DoesNotExist:
+        logger.warning(
+            f"chat_monitoring_warning_003: Swarm message {evaluation.message_id} is gone"
+        )
+        return JsonResponse({"error": "Swarm message not found"}, status=404)
     return JsonResponse({"id": stored.id})
 
 

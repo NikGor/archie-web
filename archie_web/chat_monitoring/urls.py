@@ -10,6 +10,16 @@ urlpatterns = [
         views.ingest_evaluation,
         name="chat_monitoring_ingest_evaluation",
     ),
+    path(
+        "api/swarm/pending/",
+        views.get_swarm_pending,
+        name="chat_monitoring_swarm_pending",
+    ),
+    path(
+        "api/ingest/swarm-evaluations/",
+        views.ingest_swarm_evaluation,
+        name="chat_monitoring_ingest_swarm_evaluation",
+    ),
     path("api/summary/", views.get_summary, name="chat_monitoring_summary"),
     path("api/rules/", views.get_rule_stats, name="chat_monitoring_rules"),
     path(
