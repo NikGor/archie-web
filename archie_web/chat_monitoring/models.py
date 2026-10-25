@@ -159,3 +159,73 @@ class ConversationHandling(models.Model):
 
     def __str__(self) -> str:
         return f"{self.conversation_id}: {self.status} {','.join(self.jira_keys)}"
+
+
+class SwarmTurnEvaluation(models.Model):
+    """Judge grade of one swarm agent message by the swarm prompt specs
+    (archie_shared SwarmTurnEvaluation, ARCHIE-297)."""
+
+    event = models.OneToOneField(
+        "swarm_journal.SwarmEvent",
+        on_delete=models.CASCADE,
+        to_field="message_id",
+        related_name="evaluation",
+    )
+    agent_id = models.CharField(max_length=32, db_index=True)
+    run = models.ForeignKey(
+        MonitorRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="swarm_evaluations",
+    )
+    grade = models.CharField(
+        max_length=8, choices=[(grade, grade) for grade in GRADES], db_index=True
+    )
+    rules = models.JSONField(default=list, help_text="List of MonitorRuleScore")
+    spec_versions = models.JSONField(
+        default=dict, help_text="Spec name -> fingerprint of the judged spec version"
+    )
+    reasons = models.TextField(
+        blank=True, default="", help_text="Broken rule keys as ',a,b,' for filtering"
+    )
+    judge_model = models.CharField(max_length=128)
+    judge_cost = models.FloatField(null=True, blank=True)
+    evaluated_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        ordering = ["-evaluated_at"]
+
+    def __str__(self) -> str:
+        return f"{self.event_id} @{self.agent_id}: {self.grade}"
+
+
+class SwarmRuleHandling(models.Model):
+    """What was done about one broken rule of one judged swarm message
+    (like RuleHandling for chat turns, ARCHIE-297)."""
+
+    event = models.ForeignKey(
+        "swarm_journal.SwarmEvent",
+        on_delete=models.CASCADE,
+        to_field="message_id",
+        related_name="rule_handlings",
+    )
+    rule_key = models.CharField(max_length=200, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=[(status, status) for status in HANDLING_STATUSES],
+        db_index=True,
+    )
+    jira_key = models.CharField(max_length=32, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.CharField(max_length=150, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "rule_key"], name="unique_swarm_rule_handling"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.event_id} {self.rule_key}: {self.status} {self.jira_key}"
