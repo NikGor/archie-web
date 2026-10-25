@@ -460,3 +460,109 @@ class UiApiTest(TestCase):
         self.assertIsNotNone(self.client.get(reverse("chat_monitoring_active")).json()["run"])
         MonitorRun.objects.update(updated_at=timezone.now() - timedelta(hours=1))
         self.assertIsNone(self.client.get(reverse("chat_monitoring_active")).json()["run"])
+
+
+def make_swarm_event(message_id: str, sender: str, kind: str, minutes_ago: int, **extra):
+    from archie_web.swarm_journal.models import SwarmEvent
+
+    return SwarmEvent.objects.create(
+        message_id=message_id,
+        run_id=extra.pop("run_id", "run-s"),
+        created_at=timezone.now() - timedelta(minutes=minutes_ago),
+        sender=sender,
+        kind=kind,
+        text=extra.pop("text", f"{sender} {kind}"),
+        **extra,
+    )
+
+
+def swarm_evaluation(message_id: str, grades: dict[str, str]) -> dict:
+    return {
+        "run_id": "run1",
+        "message_id": message_id,
+        "agent_id": "light",
+        "grade": "red" if "red" in grades.values() else "green",
+        "rules": [
+            {"spec": key.split(":")[0], "rule_id": key.split(":")[1], "text": key, "grade": grade}
+            for key, grade in grades.items()
+        ],
+        "spec_versions": {"swarm_base": "v1"},
+        "judge_model": "~typesafe/jev-latest",
+        "evaluated_at": NOW,
+    }
+
+
+@mock.patch.object(eval_views, "EVAL_API_TOKEN", TOKEN)
+class SwarmMonitoringTest(TestCase):
+    """Swarm agent messages judged by the swarm specs (ARCHIE-297)."""
+
+    auth = {"HTTP_AUTHORIZATION": f"Bearer {TOKEN}"}
+
+    def setUp(self):
+        make_swarm_event("s-user", "user", "user", 30, text="@light выключи торшер")
+        make_swarm_event("s-light", "light", "action", 29, reply_to="s-user", mentions=[])
+        make_swarm_event("s-check", "home", "check", 20)
+        make_swarm_event("s-system", "system", "system", 10)
+
+    def test_pending_lists_agent_messages_with_trigger_and_history(self):
+        batch = self.client.get(reverse("chat_monitoring_swarm_pending"), **self.auth).json()
+        records = batch["records"]
+        self.assertEqual([r["message"]["message_id"] for r in records], ["s-light", "s-check"])
+        self.assertEqual(records[0]["trigger"]["message_id"], "s-user")
+        self.assertEqual([m["message_id"] for m in records[1]["history"]], ["s-user", "s-light"])
+
+    def test_ingest_stores_evaluation_and_removes_it_from_pending(self):
+        response = self.client.post(
+            reverse("chat_monitoring_ingest_swarm_evaluation"),
+            data=json.dumps(swarm_evaluation("s-light", {"swarm_base:swarm_reply_short": "red"})),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 200)
+        batch = self.client.get(reverse("chat_monitoring_swarm_pending"), **self.auth).json()
+        self.assertEqual([r["message"]["message_id"] for r in batch["records"]], ["s-check"])
+
+    def test_ingest_of_unknown_message_is_404(self):
+        response = self.client.post(
+            reverse("chat_monitoring_ingest_swarm_evaluation"),
+            data=json.dumps(swarm_evaluation("nope", {})),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_rule_stats_and_rule_handling_cover_swarm_rules(self):
+        from archie_web.chat_monitoring import swarm
+        from archie_web.chat_monitoring.models import SwarmRuleHandling
+
+        swarm.store_evaluation(
+            swarm.SwarmTurnEvaluation.model_validate(
+                swarm_evaluation("s-light", {"swarm_base:swarm_reply_short": "red"})
+            )
+        )
+        swarm.store_evaluation(
+            swarm.SwarmTurnEvaluation.model_validate(
+                swarm_evaluation("s-check", {"swarm_base:swarm_reply_short": "green"})
+            )
+        )
+        user = User.objects.create_user("niko")
+        self.client.force_login(user)
+        stats = self.client.get(reverse("chat_monitoring_rules")).json()
+        rule = next(r for r in stats["rules"] if r["key"] == "swarm_base:swarm_reply_short")
+        self.assertEqual((rule["red"], rule["green"], stats["swarm_turns"]), (1, 1, 2))
+        self.assertEqual(rule["examples"][0]["agent_id"], "light")
+        self.assertEqual(rule["handling"]["none"], 1)
+
+        marked = self.client.post(
+            reverse("chat_monitoring_rule_handling"),
+            data=json.dumps({"rule": "swarm_base:swarm_reply_short", "status": "fixed", "jira_key": "ARCHIE-297"}),
+            content_type="application/json",
+        ).json()
+        self.assertEqual(marked["marked"], 1)
+        self.assertEqual(
+            list(SwarmRuleHandling.objects.values_list("event_id", "status", "jira_key")),
+            [("s-light", "fixed", "ARCHIE-297")],
+        )
+        stats = self.client.get(reverse("chat_monitoring_rules")).json()
+        rule = next(r for r in stats["rules"] if r["key"] == "swarm_base:swarm_reply_short")
+        self.assertEqual(rule["handling"]["fixed"], 1)
