@@ -57,6 +57,10 @@ const AC_DECENTRALIZATION = { centralized: 0.12, workflow: 0.35, hierarchical: 0
 const AC_TOPOLOGY_ICONS = {
     centralized: 'circle-dot', workflow: 'workflow', hierarchical: 'network', decentralized: 'share-2',
 };
+// Smallest node budget that fits one run of the profile (ARCHIE-345 probe: Luna
+// $0.0004, Terra $0.003, Sonnet $0.017, Opus $0.044 per short task; the
+// platform reserves the worst case before every call)
+const AC_PROFILE_BUDGET = { FAST: 0.02, BALANCED: 0.05, DEEP: 0.15, MAXIMUM: 0.3 };
 const AC_NODE_W = 184;
 const AC_NODE_H = 84;
 
@@ -915,7 +919,7 @@ function acModelPaneHtml(agent) {
     const ladder = catalog.profiles.map((p, i) => `
         <button class="ac-rung ${agent.model.profile === p.name ? 'ac-rung--on' : ''}" data-ac-agent-set="model.profile:${p.name}" style="--level:${i + 1}">
             <span class="ac-rung__bars">${'<i></i>'.repeat(4)}</span>
-            <b>${p.name}</b><span>${peEscape(p.models.join(' → '))}</span>
+            <b>${p.name}</b><span title="${peEscape(p.models.join(' → '))}">${peEscape(p.models.map(m => m.replace(/^[a-z-]+\//, '')).join(' → '))} · от $${AC_PROFILE_BUDGET[p.name]}</span>
         </button>`).join('');
     return `
         <div class="ac-field">Профиль сложности — модель выбирает платформа
@@ -1393,6 +1397,10 @@ function acClick(event) {
     if (data.acAgentSet && node && node.spec) {
         const [path, value] = data.acAgentSet.split(':');
         acPathSet(node.spec, path, value);
+        if (path === 'model.profile' && (node.spec.budget.max_cost_usd || 0) < AC_PROFILE_BUDGET[value]) {
+            node.spec.budget.max_cost_usd = AC_PROFILE_BUDGET[value];
+            acNotify(`Бюджет узла поднят до $${AC_PROFILE_BUDGET[value]} — меньше ${value} не хватит на один запуск`);
+        }
         acSpecChanged({ structure: true });
         return;
     }
