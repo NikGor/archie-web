@@ -8,6 +8,7 @@
 
 const AC_API = '/agent-constructor/api';
 const AC_POLL_MS = 1500;
+const AC_POLL_RETRIES = 10;
 const AC_VALIDATE_DELAY_MS = 500;
 const AC_TABS = [
     ['build', 'blocks', 'Конструктор'],
@@ -920,14 +921,19 @@ async function acStartRun() {
     }
 }
 
-async function acPollRun(runId) {
+async function acPollRun(runId, failures = 0) {
     clearTimeout(acState.pollTimer);
     try {
         acState.run = await acFetch(`/runs/${runId}/`);
     } catch (error) {
+        // A network hiccup must not stop the progress: retry, then give up
         acSetError(error);
+        if (failures < AC_POLL_RETRIES && acState.active) {
+            acState.pollTimer = setTimeout(() => acPollRun(runId, failures + 1), AC_POLL_MS * 2);
+        }
         return;
     }
+    if (failures) acSetError(null);
     acRenderPart('ac-run-panel', acRunPanelHtml);
     acRenderPart('ac-diagram', acDiagramHtml);
     if (acState.run.state === 'running' && acState.active) {
@@ -996,6 +1002,7 @@ function acClick(event) {
         return;
     }
     if (data.acRun) { acOpenRun(data.acRun).catch(acSetError); return; }
+    if (data.acStep) { acOpenStep(data.acStep); return; }
     if (data.acOpen) {
         const system = acState.systems.find(s => s.id === Number(data.acOpen));
         acLoadSpec(structuredClone(system.spec), {
