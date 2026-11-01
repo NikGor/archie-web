@@ -192,6 +192,13 @@
             <div id="monitoring-root" class="pe cm"></div>
         </div>
 
+        <!--
+          ЭКРАН 8: КОНСТРУКТОР АГЕНТОВ (z-10, скрыт)
+        -->
+        <div id="constructor-view" class="view-screen z-10 hidden">
+            <div id="constructor-root" class="pe ac"></div>
+        </div>
+
     </main>
 
     <!--
@@ -274,6 +281,9 @@
 
     <!-- Chat monitoring -->
     <script src="{% static_v 'webapp/js/monitoring/ChatMonitoring.js' %}"></script>
+
+    <!-- Agent constructor -->
+    <script src="{% static_v 'webapp/js/constructor/AgentConstructor.js' %}"></script>
 
     <!-- Main Initialization -->
     <script src="{% static_v 'webapp/js/main.js' %}"></script>

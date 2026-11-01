@@ -653,6 +653,7 @@ function showMonitoringView() {
     });
     if (typeof window.hideSwarmView === 'function') window.hideSwarmView();
     if (typeof window.hidePromptsView === 'function') window.hidePromptsView();
+    if (typeof window.hideConstructorView === 'function') window.hideConstructorView();
     document.getElementById('monitoring-view').classList.remove('hidden');
     document.body.classList.remove('voice-mode');
     if (typeof window.stopVoiceSession === 'function') window.stopVoiceSession();

@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "archie_web.prompt_evals",
     "archie_web.chat_monitoring",
     "archie_web.swarm_journal",
+    "archie_web.agent_constructor",
 ]
 
 MIDDLEWARE = [

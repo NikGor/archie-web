@@ -399,6 +399,21 @@ function renderRightSidebar() {
     monitoringExpanded.innerHTML = `<i data-lucide="shield-check" class="w-5 h-5 flex-shrink-0"></i><span class="sidebar-text ml-4 font-medium">Мониторинг чатов</span>`;
     rightSidebarExpandedMenu.appendChild(monitoringExpanded);
 
+    const constructorCollapsed = document.createElement('a');
+    constructorCollapsed.href = "#";
+    constructorCollapsed.className = "sidebar-item text-gray-300";
+    constructorCollapsed.dataset.appCategory = 'constructor';
+    constructorCollapsed.title = "Конструктор агентов";
+    constructorCollapsed.innerHTML = `<i data-lucide="blocks" class="w-6 h-6"></i>`;
+    rightSidebarCollapsedIcons.appendChild(constructorCollapsed);
+
+    const constructorExpanded = document.createElement('a');
+    constructorExpanded.href = "#";
+    constructorExpanded.className = "sidebar-item-expanded text-gray-300";
+    constructorExpanded.dataset.appCategory = 'constructor';
+    constructorExpanded.innerHTML = `<i data-lucide="blocks" class="w-5 h-5 flex-shrink-0"></i><span class="sidebar-text ml-4 font-medium">Конструктор агентов</span>`;
+    rightSidebarExpandedMenu.appendChild(constructorExpanded);
+
     rightSidebarCollapsedIcons.innerHTML += '<hr class="border-t border-white/10 my-2">';
     rightSidebarExpandedMenu.innerHTML += '<hr class="border-t border-white/10 my-2">';
 

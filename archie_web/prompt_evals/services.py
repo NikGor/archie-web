@@ -63,13 +63,14 @@ def call_agent(
     method: str,
     path: str,
     payload: dict | None = None,
+    timeout: float = AGENT_TIMEOUT_SECONDS,
 ) -> Any:
     try:
         response = requests.request(
             method,
             f"{AI_AGENT_URL}{path}",
             json=payload,
-            timeout=AGENT_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except requests.RequestException as error:
         raise AgentError(f"Agent is not reachable: {error}") from error

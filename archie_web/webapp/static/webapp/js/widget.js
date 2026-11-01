@@ -410,6 +410,7 @@ async function showWidgetView(widgetType) {
     if (typeof window.hideSwarmView === 'function') window.hideSwarmView();
     if (typeof window.hidePromptsView === 'function') window.hidePromptsView();
     if (typeof window.hideMonitoringView === 'function') window.hideMonitoringView();
+    if (typeof window.hideConstructorView === 'function') window.hideConstructorView();
     leftSidebar.classList.add('hidden');
 
     updateSidebarActiveState(widgetType);

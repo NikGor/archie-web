@@ -931,6 +931,7 @@ function showPromptsView() {
     });
     if (typeof window.hideSwarmView === 'function') window.hideSwarmView();
     if (typeof window.hideMonitoringView === 'function') window.hideMonitoringView();
+    if (typeof window.hideConstructorView === 'function') window.hideConstructorView();
     document.getElementById('prompts-view').classList.remove('hidden');
     document.body.classList.remove('voice-mode');
     if (typeof window.stopVoiceSession === 'function') window.stopVoiceSession();
