@@ -699,7 +699,7 @@ function acRunPanelHtml() {
         <div class="ac-card__head">
             <h3><i data-lucide="play" class="w-4 h-4"></i> Запуск</h3>
             <div class="ac-actions">
-                <label class="ac-toggle" title="Demo: tools возвращают демо-данные. Реальные: настоящие дом, календарь, интернет; изменения всё равно только предлагаются.">
+                <label class="ac-toggle" title="Demo: дом, календарь, заметки и задачи отдают демо-данные; веб-поиск и места всегда настоящие. Реальные: все tools на настоящих данных. Изменения в обоих режимах только предлагаются.">
                     <input type="checkbox" data-ac-action="toggle-demo" ${real ? 'checked' : ''}> Реальные данные</label>
                 ${running
                     ? '<button class="pe-btn pe-btn--danger" data-ac-action="cancel"><i data-lucide="square" class="w-4 h-4"></i>Остановить</button>'
