@@ -85,7 +85,7 @@ const AC_TEMPLATES = [
         topology: 'hierarchical',
         title: 'Руководитель и команда',
         hint: 'Supervisor раздаёт подзадачи workers и собирает итог.',
-        task: 'Сравни два одноплатных компьютера для домашнего сервера: цена, отзывы, энергопотребление.',
+        task: 'Сравни Raspberry Pi 5 и Orange Pi 5 для домашнего сервера: цена, отзывы, энергопотребление.',
         nodes: [
             ['lead', 'supervisor', 'Руководитель исследования', 'Разбить задачу и собрать итог', '', []],
             ['prices', 'worker', 'Аналитик цен', 'Найти цены', 'Цены и доступность.', ['google_search_tool']],
@@ -466,7 +466,7 @@ function acSaveHtml() {
     const label = acState.systemId ? `ред. ${acState.revision}` : 'не сохранена';
     return `
         <button class="ac-save ${acState.dirty ? 'ac-save--dirty' : ''}" data-ac-action="save" title="Сохранить в библиотеку (Ctrl+S)">
-            ${acIcon('save', 3.5)}<span>${acState.dirty ? 'Сохранить' : 'Сохранено'}</span><em>${label}</em>
+            ${acIcon('save', 3.5)}<span>${acState.dirty ? 'Сохранить' : acState.systemId ? 'Сохранено' : 'В библиотеку'}</span><em>${label}</em>
         </button>
         ${acState.systemId ? `<button class="ac-icon-btn" data-ac-action="save-copy" title="Сохранить как новую">${acIcon('copy-plus')}</button>` : ''}`;
 }
